@@ -80,6 +80,7 @@ class Game {
       relics: 0,                       // score from explored ruins
       peaceOffers: new Set(),          // nations offering peace to this one
       lostTiles: 0,                    // tiles lost in current wars (for AI peace decisions)
+      hand: [], cardPlayed: null, mods: {}, // fortune cards for this turn
     };
   }
 
@@ -90,7 +91,75 @@ class Game {
     for (const i of n.settlements) if (this.tiles[i].settlement.type === 'city') cities++;
     return Math.min(3, 1 + Math.floor(cities / 2));
   }
-  resetActions(n) { n.apMax = this.actionsPerTurn(n); n.ap = n.apMax; }
+  resetActions(n) {
+    n.apMax = this.actionsPerTurn(n); n.ap = n.apMax;
+    n.mods = {}; n.cardPlayed = null;
+    n.hand = this.drawCards(n, HAND_SIZE);
+  }
+
+  // ---------- Settlement cap ----------
+  // Villages need administration: the capital supports 3, each town 1 more, each city 2 more.
+  settlementCap(n) {
+    let cap = 3;
+    for (const i of n.settlements) { const t = this.tiles[i].settlement.type; if (t === 'city') cap += 2; else if (t === 'town') cap += 1; }
+    if (n.trait === 'scholarly') cap += 1;
+    return cap;
+  }
+
+  // ---------- Fortune cards ----------
+  drawCards(n, count) {
+    const ids = Object.keys(CARDS);
+    const weights = ids.map(id => {
+      const c = CARDS[id];
+      let w = c.weight || 1;
+      if (c.nation.includes(n.trait)) w += 1.5;
+      if (c.leader.includes(n.leader.trait)) w += 1.5;
+      return w;
+    });
+    const hand = [];
+    for (let k = 0; k < count && ids.length; k++) {
+      let total = 0; for (let i = 0; i < ids.length; i++) if (!hand.includes(ids[i])) total += weights[i];
+      let r = this.rng.float() * total;
+      for (let i = 0; i < ids.length; i++) {
+        if (hand.includes(ids[i])) continue;
+        r -= weights[i];
+        if (r <= 0) { hand.push(ids[i]); break; }
+      }
+    }
+    return hand;
+  }
+
+  // Play a card from the hand. Free: costs no action point. One card per turn.
+  playCard(n, id) {
+    if (n.cardPlayed) return { ok: false, why: 'You have already played a card this turn.' };
+    if (!n.hand.includes(id)) return { ok: false, why: 'That card is not in your hand.' };
+    if (this.over && !this.continued) return { ok: false, why: 'The game is over.' };
+    const c = CARDS[id];
+    let msg = `plays ${c.name}`;
+    if (c.kind === 'mod') { Object.assign(n.mods, c.mod); msg += `: ${c.desc.toLowerCase()}`; }
+    else {
+      const setts = n.settlements.length;
+      switch (id) {
+        case 'caravan': { const g = 15 + 2 * setts; n.gold += g; msg += ` and gains ${g} gold.`; break; }
+        case 'taxes': { const g = 3 * setts; n.gold += g; msg += ` and gains ${g} gold.`; break; }
+        case 'prospectors': { const m = 20 + 2 * setts; n.mat += m; msg += ` and gains ${m} materials.`; break; }
+        case 'bumper': n.growth += 15; msg += ': +15 growth.'; break;
+        case 'migrants': {
+          const room = n.settlements.map(i => this.tiles[i].settlement).filter(s => s.pop < SETTLEMENTS[s.type].maxPop).sort((a, b) => a.pop - b.pop);
+          if (room.length) { room[0].pop++; msg += `: ${room[0].name} grows to ${room[0].pop}.`; } else { n.growth += 10; msg += ': +10 growth.'; }
+          break;
+        }
+        case 'envoys': for (const o of this.nations) if (o !== n && o.alive) this.shiftRel(n, o, 6); msg += ': relations improve everywhere.'; break;
+        case 'festival': if (n.edict) { n.edictUntil += 4; msg += `: the ${EDICTS[n.edict].name} continues 4 more turns.`; } else { n.growth += 8; msg += ': +8 growth.'; } break;
+        case 'rally': n.ap++; n.apMax = Math.max(n.apMax, n.ap); msg += ': an extra action this turn!'; break;
+      }
+    }
+    n.cardPlayed = id;
+    n.hand = n.hand.filter(x => x !== id);
+    this.actionCounts['card:' + id] = (this.actionCounts['card:' + id] || 0) + 1;
+    this.addLog(`${n.name} ${msg}`, n);
+    return { ok: true, msg };
+  }
 
   // ---------- War & peace ----------
   warKey(a, b) { return a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`; }
@@ -304,6 +373,7 @@ class Game {
     if (n.trait === 'martial') a += 2;
     if (n.leader.trait === 'warlike') a += 2;
     if (n.edict === 'levy') a += 3;
+    if (n.mods && n.mods.attack) a += n.mods.attack;
     return a;
   }
   defenseAt(n, t) {
@@ -340,6 +410,7 @@ class Game {
     if (kind === 'upgrade' && T === 'scholarly') m *= 0.7;
     if (kind === 'harbor' && T === 'maritime') m *= 0.5;
     if (n.edict === 'corvee' && ['improve', 'road', 'castle', 'village'].includes(kind)) m *= 0.75;
+    if (n.mods && n.mods[kind] !== undefined) m *= n.mods[kind]; // fortune card in play this turn
     return m;
   }
   scaleCost(cost, m) {
@@ -347,7 +418,10 @@ class Game {
     for (const k in cost) out[k] = Math.max(1, Math.round(cost[k] * m));
     return out;
   }
-  expandCost(n) { return this.scaleCost({ gold: 3 + Math.round(Math.pow(n.owned.size, 1.1)) }, this.costMul(n, 'expand')); }
+  expandCost(n) {
+    if (n.mods && n.mods.expand === 0) return { gold: 0 };
+    return this.scaleCost({ gold: 3 + Math.round(Math.pow(n.owned.size, 1.1)) }, this.costMul(n, 'expand'));
+  }
   canAfford(n, c) { return (c.mat || 0) <= n.mat && (c.gold || 0) <= n.gold; }
   pay(n, c) { n.mat -= c.mat || 0; n.gold -= c.gold || 0; }
   costStr(c) { return Object.entries(c).map(([k, v]) => `${v} ${{ mat: 'materials', gold: 'gold' }[k]}`).join(', '); }
@@ -424,7 +498,7 @@ class Game {
       }
       case 'farm': case 'mine': case 'lumber': case 'pasture': case 'fishery': {
         const I = IMPROVEMENTS[id];
-        const cost = this.scaleCost(I.cost, this.costMul(n, 'improve'));
+        const cost = this.scaleCost(I.cost, this.costMul(n, 'improve') * (n.mods && n.mods[id] !== undefined ? n.mods[id] : 1));
         const label = `Build ${I.name}`;
         if (!t || t.owner !== n.id) return r(false, 'Must be your tile.', cost, label);
         if (t.improvement === id) return r(false, 'Already built here.', cost, label);
@@ -443,6 +517,8 @@ class Game {
       case 'village': {
         const cost = this.scaleCost(COSTS.village, this.costMul(n, 'village'));
         if (!t || (t.owner !== n.id && !(t.owner === null && this.isFrontier(n, t)))) return r(false, 'Must be your tile, or free land bordering your territory.', cost, 'Found village');
+        const cap = this.settlementCap(n);
+        if (n.settlements.length >= cap) return r(false, `Settlement limit reached (${n.settlements.length}/${cap}). Grow a village into a town (+1) or city (+2) first.`, cost, 'Found village');
         if (!this.canPlaceSettlement(t)) return r(false, `Needs dry, non-mountain land at least ${SETTLEMENT_SPACING} tiles from other settlements.`, cost, 'Found village');
         if (!this.canAfford(n, cost)) return r(false, 'Cannot afford: ' + this.costStr(cost), cost, 'Found village');
         return r(true, '', cost, 'Found village');
@@ -742,7 +818,7 @@ class Game {
   // Borders creep outward around settlements each turn: each settlement has a chance to claim
   // one free tile within its influence radius that touches existing territory.
   naturalGrowth(n) {
-    const chance = 0.5 + (n.trait === 'wanderers' ? 0.2 : 0);
+    const chance = 0.4 + (n.trait === 'wanderers' ? 0.2 : 0);
     let grabbed = 0;
     for (const i of n.settlements) {
       if (!this.rng.chance(chance)) continue;
@@ -879,7 +955,7 @@ class Game {
         if (!near.has(t.i)) v = v * 0.4 + (t.water ? 0 : 1); // unworked land is only worth it as future village ground
         if (v > bv) { bv = v; best = t; }
       }
-      let s = 3 + bv * 0.6 + (n.owned.size < 16 ? 2 : 0) + (T === 'wanderers' ? 1.5 : 0) + (L === 'ambitious' ? 0.5 : 0);
+      let s = 2.5 + bv * 0.6 + (n.owned.size < 16 ? 1 : 0) + (T === 'wanderers' ? 1.5 : 0) + (L === 'ambitious' ? 0.5 : 0);
       add(s, 'expand', best);
     }
 
@@ -917,7 +993,7 @@ class Game {
     // Upgrades
     for (const i of n.settlements) {
       const t = this.tiles[i], S = SETTLEMENTS[t.settlement.type];
-      if (S.next && t.settlement.pop >= S.upgradePop) add(8 + (T === 'scholarly' ? 2 : 0), 'upgrade', t);
+      if (S.next && t.settlement.pop >= S.upgradePop) add(8 + (T === 'scholarly' ? 2 : 0) + (n.settlements.length >= this.settlementCap(n) ? 3 : 0), 'upgrade', t);
     }
 
     // Roads
@@ -1013,8 +1089,29 @@ class Game {
       n.lastAction = 'Saving up';
       return r;
     }
+    if (!n.cardPlayed && n.hand.length) this.aiPlayCard(n, choice);
     if (!choice) return this.doAction(n, 'wait');
     return this.doAction(n, choice.id, choice.tile, choice.target);
+  }
+
+  // Immediate cards are always worth playing; modifier cards only when they discount what we are about to do.
+  aiPlayCard(n, choice) {
+    const matches = (mod, id) => {
+      if (!id) return false;
+      if (mod.village && id === 'village') return true;
+      if (mod.improve && IMPROVEMENTS[id]) return true;
+      if (mod.fishery && id === 'fishery') return true;
+      if (mod.harbor && id === 'harbor') return true;
+      if (mod.expand !== undefined && id === 'expand') return true;
+      if (mod.upgrade && id === 'upgrade') return true;
+      if (mod.castle && id === 'castle') return true;
+      if (mod.attack && id === 'conquer') return true;
+      return false;
+    };
+    const now = n.hand.find(id => CARDS[id].kind === 'now');
+    const useful = n.hand.find(id => CARDS[id].kind === 'mod' && matches(CARDS[id].mod, choice && choice.id));
+    const pick = useful || now;
+    if (pick) this.playCard(n, pick);
   }
 
   runAITurns() {

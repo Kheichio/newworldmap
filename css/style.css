@@ -165,7 +165,7 @@ details.acc[open] > summary { border-bottom: 1px solid rgba(0,0,0,0.2); box-shad
 .standings[open] > summary::after { content: '▴'; }
 .ranking { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
 .rank-row {
-  display: grid; grid-template-columns: 14px 12px 1fr auto; gap: 6px; align-items: center;
+  display: grid; grid-template-columns: 14px 21px 1fr auto; gap: 6px; align-items: center;
   font-size: 14px; font-weight: 600; color: var(--silver-hi);
   background: rgba(20, 22, 26, 0.85); border: 1px solid #4a4f58; border-radius: 3px; padding: 3px 8px; min-width: 200px;
 }
@@ -233,6 +233,39 @@ details.acc[open] > summary { border-bottom: 1px solid rgba(0,0,0,0.2); box-shad
 button.quick { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 4px; font-size: 14px; line-height: 1.2; }
 button.quick .qi { font-size: 20px; }
 button.quick .qn { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+
+/* ============ Fortune cards ============ */
+.hand-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.hand-head .group-title { margin: 6px 0 4px; }
+.hand { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.card {
+  position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px;
+  padding: 8px 6px 6px; border-radius: 5px; cursor: pointer; user-select: none;
+  background: linear-gradient(170deg, #f6efd8 0%, #e6d9b4 60%, #d8c894 100%);
+  border: 1px solid #8a6a12; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.5), inset 0 0 0 3px rgba(138,106,18,0.35), 0 2px 5px rgba(0,0,0,0.45);
+  transition: transform 0.12s, filter 0.12s;
+}
+.card:hover:not(.spent) { transform: translateY(-3px); filter: brightness(1.05); }
+.card .ci { font-size: 24px; line-height: 1; }
+.card .cn { font-family: var(--font-head); font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em; color: #3a2b06; }
+.card .cd { font-size: 12.5px; line-height: 1.25; color: #4b3d1a; }
+.card .ck { font-size: 11px; font-weight: 700; color: #8a6a12; }
+.card.affine { border-color: #b8860b; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.5), inset 0 0 0 3px rgba(212,175,55,0.7), 0 0 8px rgba(212,175,55,0.5); }
+.card.spent { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.6); }
+.card.played { background: linear-gradient(170deg, #fff2b8, #e6c455 60%, #d5b23d); opacity: 1; filter: none; cursor: default; }
+.card .cb { font-size: 12px; font-weight: 700; color: var(--gold-lo); margin-top: 2px; }
+
+/* ============ Flags, volume, version ============ */
+.flag { display: inline-block; width: 30px; height: 20px; border: 1px solid rgba(0,0,0,0.6); border-radius: 2px; vertical-align: middle; box-shadow: 0 1px 2px rgba(0,0,0,0.4); image-rendering: auto; }
+.flag.big { width: 54px; height: 36px; }
+.flag.tiny { width: 21px; height: 14px; }
+.preview-row { display: flex; gap: 12px; align-items: stretch; margin: 6px 0; }
+.flag-preview { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; padding: 8px; background: linear-gradient(180deg, #b3b7c0, #d2d5db 15%, #dfe1e6); border: 1px solid #7d828c; border-radius: 4px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.28); }
+.flag-preview canvas { width: 96px; height: 64px; border: 1px solid rgba(0,0,0,0.6); border-radius: 2px; }
+.preview-row .inset { flex: 1; }
+.version { font-family: var(--font-body); font-size: 13px; font-weight: 700; color: var(--ink-soft); background: rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.2); border-radius: 3px; padding: 0 6px; margin-left: 6px; vertical-align: middle; }
+.volume { display: flex; align-items: center; gap: 4px; margin-right: 6px; }
+.volume input[type=range] { width: 90px; padding: 0; box-shadow: none; background: transparent; border: 0; accent-color: #8a6a12; }
 
 /* ============ Tile panel ============ */
 .tile-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }

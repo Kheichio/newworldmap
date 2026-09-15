@@ -1,5 +1,7 @@
 // Static game data: terrain, resources, nations, traits, costs, name generators.
 
+const GAME_VERSION = '0.0.5';
+
 const TERRAINS = {
   ocean:     { name: 'Ocean',     color: '#1d4e79', water: true, food: 0, mat: 0, gold: 0 },
   coast:     { name: 'Coast',     color: '#3a86b8', water: true, food: 1, mat: 0, gold: 0 },
@@ -105,6 +107,28 @@ const EDICTS = {
 
 // Random events (chance per nation per turn is EVENT_CHANCE).
 const EVENT_CHANCE = 0.1;
+
+// Fortune cards: every nation draws HAND_SIZE each turn and may play one (free — it costs no action).
+// `now` cards take effect immediately; `mod` cards change costs/strength for the rest of the turn.
+// Draw weight is 1, +1.5 for a matching national trait, +1.5 for a matching leader trait.
+const HAND_SIZE = 3;
+const CARDS = {
+  homesteaders: { name: 'Homesteaders',   icon: '🏡', kind: 'mod', mod: { village: 0.5 },            desc: 'Founding a village costs half this turn.',             nation: ['wanderers', 'builders'], leader: ['ambitious'] },
+  masons:       { name: 'Master Masons',  icon: '🧱', kind: 'mod', mod: { improve: 0.5, road: 0.5 }, desc: 'Improvements and roads cost half this turn.',          nation: ['builders'],              leader: ['industrious'] },
+  muster:       { name: 'Call to Arms',   icon: '🛡️', kind: 'mod', mod: { attack: 4 },               desc: '+4 attack strength this turn.',                        nation: ['martial'],               leader: ['warlike', 'reckless'] },
+  charts:       { name: 'Sea Charts',     icon: '🧭', kind: 'mod', mod: { harbor: 0.5, fishery: 0.5 }, desc: 'Harbours and fisheries cost half this turn.',        nation: ['maritime'],              leader: [] },
+  surveyors:    { name: 'Surveyors',      icon: '📜', kind: 'mod', mod: { expand: 0 },               desc: 'Expanding your border is free this turn.',             nation: ['wanderers'],             leader: ['ambitious'] },
+  scholars:     { name: 'Scholars',       icon: '📚', kind: 'mod', mod: { upgrade: 0.5 },            desc: 'Upgrading a settlement costs half this turn.',         nation: ['scholarly'],             leader: ['wise'] },
+  fortify:      { name: 'Fortify',        icon: '🏰', kind: 'mod', mod: { castle: 0.5 },             desc: 'Castles cost half this turn.',                         nation: ['martial'],               leader: ['pious', 'stalwart'] },
+  caravan:      { name: 'Caravan',        icon: '🐪', kind: 'now', desc: 'Gain 15 gold, plus 2 per settlement.',                                                  nation: ['mercantile'],            leader: ['frugal', 'cunning'] },
+  taxes:        { name: 'Tax Collectors', icon: '🪙', kind: 'now', desc: 'Gain 3 gold per settlement.',                                                            nation: ['mercantile', 'scholarly'], leader: ['frugal'] },
+  prospectors:  { name: 'Prospectors',    icon: '⛏️', kind: 'now', desc: 'Gain 20 materials, plus 2 per settlement.',                                             nation: ['miners'],                leader: ['industrious'] },
+  bumper:       { name: 'Bumper Crop',    icon: '🌾', kind: 'now', desc: '+15 growth.',                                                                            nation: ['agrarian'],              leader: ['bountiful', 'beloved'] },
+  migrants:     { name: 'Migrants',       icon: '👥', kind: 'now', desc: '+1 population in your smallest settlement with room.',                                  nation: ['agrarian'],              leader: ['beloved', 'charismatic'] },
+  envoys:       { name: 'Envoys',         icon: '🕊️', kind: 'now', desc: '+6 relations with every nation.',                                                      nation: ['mercantile', 'scholarly'], leader: ['charismatic', 'cunning'] },
+  festival:     { name: 'Festival',       icon: '🎉', kind: 'now', desc: 'Your edict lasts 4 more turns (+8 growth if none is in force).',                        nation: [],                        leader: ['pious', 'beloved'] },
+  rally:        { name: 'Rally',          icon: '⚡', kind: 'now', desc: '+1 action this turn.', weight: 0.4,                                                     nation: [],                        leader: ['ambitious', 'beloved'] },
+};
 
 const COSTS = {
   village: { mat: 60, gold: 15 },

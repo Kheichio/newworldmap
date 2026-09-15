@@ -1,6 +1,6 @@
-# New World Map
+# New World Map — v0.0.5
 
-A small turn-based nation builder on a procedurally generated tile world. Plain HTML/JS/Canvas — no build step, no dependencies.
+A small turn-based nation builder on a procedurally generated tile world. Plain HTML/JS/Canvas — no build step, no dependencies. The version is set in `js/data.js` (`GAME_VERSION`) and shown in the title bar and setup screen.
 
 **Play:** open `index.html` in a browser (double-click works; no server needed).
 
@@ -37,6 +37,14 @@ Every nation gets **1 action per turn, plus 1 for every two cities (max 3)**. Ac
 | Edict | A 12-turn policy: Harvest Festival, Great Levy, Market Fairs or Corvée Labour |
 | End turn | Save resources |
 
+**Settlement limit:** the capital supports 3 settlements, each town adds 1, each city adds 2 (Scholarly nations +1) — grow and upgrade before you spread.
+
+**Fortune cards:** every nation draws 3 cards a turn and may play one for free. Immediate cards pay out gold, materials, growth, population or goodwill; modifier cards discount a kind of action (or boost attack) for the rest of the turn. Cards related to your colour's trait or your leader's trait are drawn more often (weight 1 → 2.5 → 4).
+
+**Flags:** each nation gets a procedurally drawn flag (field colour, layout from the nation's name, emblem from its trait) shown on the map above capitals and in every panel.
+
+**Sound:** soft lo-fi effects synthesised with the Web Audio API — no files. Volume slider and mute (M) in the title bar; settings are remembered.
+
 Also in play: **ancient ruins** 🏺 that reward whoever claims them, and **random events** (harvests, plagues, migrants, bandits, storms, wildfires) that strike every nation now and then — castles keep bandits away.
 
 Key rules:
@@ -65,8 +73,10 @@ js/noise.js       simplex noise + fBm
 js/data.js        terrains, resources, improvements, settlements, costs, nation & leader traits, name generators
 js/mapgen.js      world generation
 js/game.js        rules: yields, actions, conquest, relations, turn processing, AI
-js/render.js      canvas renderer (cached terrain layer + overlays)
-js/ui.js          setup screen, HUD panels, map interaction
+js/render.js      canvas renderer (organic tile polygons, cached terrain layer, sprites, overlays)
+js/flags.js       procedural nation flags
+js/audio.js       synthesised lo-fi sound effects
+js/ui.js          setup screen, HUD panels, cards, map interaction
 js/main.js        wiring
 ```
 

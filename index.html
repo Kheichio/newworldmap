@@ -16,6 +16,7 @@
       <div class="brand">
         <span class="laurel">❦</span>
         <span class="brand-name">New World Map</span>
+        <span class="version" id="version-tag"></span>
       </div>
       <div id="turn-badge" class="turn-badge">
         <div class="tb-label">Turn</div>
@@ -24,6 +25,10 @@
       <div id="resbar" class="resbar"></div>
       <div class="spacer"></div>
       <div class="toolbar">
+        <div class="volume" title="Sound volume">
+          <button id="btn-mute" class="tool" title="Mute / unmute (M)">🔊</button>
+          <input id="vol" type="range" min="0" max="100" value="50" title="Volume">
+        </div>
         <button id="btn-center" class="tool" title="Centre on your capital (C)">⌂ Capital</button>
         <button id="btn-legend" class="tool" title="Show map legend (L)">Legend</button>
         <button id="btn-grid" class="tool" title="Toggle grid (G)">Grid</button>
@@ -86,6 +91,8 @@
             <div class="ap" id="ap-info"></div>
           </div>
           <div class="turn-sub" id="turn-sub">Choose an action. When your actions are spent, every rival nation moves.</div>
+          <div class="hand-head"><span class="group-title">Fortune cards</span><span id="hand-note" class="note"></span></div>
+          <div id="hand" class="hand"></div>
           <div class="quick-grid" id="quick-actions"></div>
           <button id="btn-wait" class="btn wide" title="End your turn now and keep your resources (Space)">⏳ &nbsp;End turn &amp; save resources</button>
         </section>
@@ -116,7 +123,7 @@
       <div class="title-block">
         <div class="laurel big">❦</div>
         <h1>New World Map</h1>
-        <div class="subtitle">Found a nation. Claim the wilds. Outlast your rivals.</div>
+        <div class="subtitle">Found a nation. Claim the wilds. Outlast your rivals. <span class="version" id="version-setup"></span></div>
       </div>
       <div class="grid2">
         <label>Nation name <input id="in-nation" maxlength="40"></label>
@@ -138,7 +145,10 @@
         <label>World size <select id="in-size"></select></label>
         <label>Seed <input id="in-seed" placeholder="blank = random"></label>
       </div>
-      <div id="trait-preview" class="inset"></div>
+      <div class="preview-row">
+        <div id="flag-preview" class="flag-preview" title="Your flag is drawn from your nation's name, colour and trait"></div>
+        <div id="trait-preview" class="inset"></div>
+      </div>
       <div class="row right"><button id="btn-start" class="btn gold big">Found your nation</button></div>
     </div>
   </div>
@@ -154,6 +164,8 @@
         <li><b>Materials</b> build improvements, roads, settlements and castles. <b>Gold</b> pays for expansion, trade, war, edicts and upkeep. Costs rise as your nation grows.</li>
         <li><b>Resources</b> give a taste of their yield; the matching improvement (pasture, mine, lumber camp, farm, fishery) unlocks the full yield. <b>Ruins</b> 🏺 reward whoever claims them.</li>
         <li><b>Borders grow by themselves</b> around settlements every turn. <b>Expand</b> grabs a specific tile now. Villages can be founded on free land touching your border.</li>
+        <li><b>Settlement limit.</b> Your capital supports 3 settlements; each town adds 1 and each city adds 2. Grow and upgrade before you spread.</li>
+        <li><b>Fortune cards.</b> Every turn you draw 3 cards and may play one for free. Some pay out at once (gold, materials, growth); others discount a kind of action for the rest of the turn. Your nation's colour and your leader's trait make related cards more likely.</li>
         <li><b>Roads</b> linking a settlement to your capital earn gold. <b>Harbours</b> earn gold and food and allow trade (and war) across the sea.</li>
         <li><b>Trade routes</b> pay both nations every turn and warm relations. Shared borders without trade, land hunger and warlike leaders cool them.</li>
         <li><b>War must be declared</b> (Other nations panel) before anyone can conquer. Conquering a settlement plunders it. <b>Offer peace</b> when you have had enough — the weaker or wearier side usually accepts, and a 10-turn truce follows. <b>Castles</b> defend everything within 2 tiles and raise your attack.</li>
@@ -185,6 +197,8 @@
   <script src="js/mapgen.js"></script>
   <script src="js/game.js"></script>
   <script src="js/render.js"></script>
+  <script src="js/flags.js"></script>
+  <script src="js/audio.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>
 </body>

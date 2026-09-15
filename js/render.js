@@ -462,12 +462,23 @@ class Renderer {
         this.outlinedText(t.settlement.name + (t.settlement.capital ? ' ★' : ''), cx(x), this.cam.y + y * s + s * 0.9, '#fff', 'rgba(0,0,0,0.85)');
       }
     }
-    if (s < 14) {
-      ctx.font = `700 13px Cinzel, "Trajan Pro", Georgia, serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      for (const n of game.nations) {
-        if (!n.alive || n.capital < 0) continue;
-        const t = game.tiles[n.capital];
-        this.outlinedText(n.name, cx(t.x), cy(t.y) - 12, n.color, 'rgba(0,0,0,0.85)');
+    // Flags fly over capitals; when zoomed out the nation name sits beside the flag.
+    for (const n of game.nations) {
+      if (!n.alive || n.capital < 0 || !n.flag) continue;
+      const t = game.tiles[n.capital];
+      if (t.x < x0 || t.x > x1 || t.y < y0 || t.y > y1) continue;
+      if (s >= 14) {
+        const fw = Math.max(14, s * 0.7), fh = fw * 0.66;
+        const fx = cx(t.x) + s * 0.15, fy = this.cam.y + t.y * s - fh * 0.7;
+        ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = Math.max(1, s * 0.06);
+        ctx.beginPath(); ctx.moveTo(fx, fy + fh + s * 0.2); ctx.lineTo(fx, fy - 2); ctx.stroke();
+        ctx.drawImage(n.flag, fx, fy, fw, fh);
+      } else {
+        ctx.font = `700 13px Cinzel, "Trajan Pro", Georgia, serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        const w = ctx.measureText(n.name).width;
+        const left = cx(t.x) - (w + 26) / 2;
+        ctx.drawImage(n.flag, left, cy(t.y) - 20, 22, 15);
+        this.outlinedText(n.name, left + 26, cy(t.y) - 12, n.color, 'rgba(0,0,0,0.85)');
       }
     }
     // Targeting mode

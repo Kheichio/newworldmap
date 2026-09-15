@@ -47,7 +47,11 @@ function initSetup() {
     const r = new RNG(Date.now() + Math.random() * 1e6);
     $('in-nation').value = genNationName(r);
     $('in-leader').value = genLeaderName(r);
+    updateTraitPreview();
   };
+  $('in-nation').oninput = updateTraitPreview;
+  $('version-tag').textContent = 'v' + GAME_VERSION;
+  $('version-setup').textContent = 'v' + GAME_VERSION;
   const picker = $('color-picker');
   picker.innerHTML = '';
   for (const c of NATION_COLORS) {
@@ -77,6 +81,10 @@ function updateTraitPreview() {
   const lk = $('in-ltrait').value;
   const L = lk ? LEADER_TRAITS[lk] : null;
   $('trait-preview').innerHTML = `<div class="trait"><b>${c.name} — ${T.name}:</b> ${T.desc}</div><div class="trait"><b>Leader — ${L ? L.name : 'random trait'}:</b> ${L ? L.desc : 'Your leader receives a random trait when the nation is founded.'}</div>`;
+  // flag preview from the current name + colour
+  const fp = $('flag-preview');
+  fp.innerHTML = '';
+  fp.appendChild(makeFlag({ name: $('in-nation').value.trim() || 'My Nation', colorId: c.id, color: c.hex }));
 }
 
 function startGame() {
@@ -99,6 +107,7 @@ function startGame() {
   UI.game = game;
   UI.player = game.nations[0];
   UI.mode = null;
+  for (const n of game.nations) makeFlag(n);
   UI.report = [{ kind: 'gold', msg: `${UI.player.name} is founded under ${UI.player.leader.name}. Seed: ${seed}` }];
   game.addLog(UI.report[0].msg, UI.player);
   $('setup').classList.add('hidden');
@@ -156,7 +165,27 @@ function initPanels() {
   UI.drawerOpen = load('drawer.open', true);
   for (const b of document.querySelectorAll('.drawer-tab')) b.onclick = () => { UI.drawerTab = b.dataset.tab; UI.drawerOpen = true; store('drawer.tab', UI.drawerTab); store('drawer.open', true); renderDrawer(); };
   $('drawer-toggle').onclick = () => { UI.drawerOpen = !UI.drawerOpen; store('drawer.open', UI.drawerOpen); renderDrawer(); };
+  initSound();
 }
+
+// ---------------- Sound settings ----------------
+function initSound() {
+  Sound.volume = load('volume', 0.5);
+  Sound.muted = load('muted', false);
+  const vol = $('vol'), mute = $('btn-mute');
+  vol.value = Math.round(Sound.volume * 100);
+  const refresh = () => { mute.textContent = Sound.muted || Sound.volume === 0 ? '🔇' : Sound.volume < 0.4 ? '🔉' : '🔊'; mute.title = Sound.muted ? 'Unmute (M)' : 'Mute (M)'; };
+  vol.oninput = () => { Sound.setVolume(vol.value / 100); store('volume', Sound.volume); if (Sound.muted && Sound.volume > 0) { Sound.setMuted(false); store('muted', false); } refresh(); };
+  vol.onchange = () => Sound.play('select');
+  mute.onclick = () => { Sound.setMuted(!Sound.muted); store('muted', Sound.muted); refresh(); };
+  refresh();
+  // Browsers only allow audio after a user gesture.
+  const wake = () => { Sound.init(); Sound.resume(); };
+  document.addEventListener('pointerdown', wake, { passive: true });
+  document.addEventListener('keydown', wake);
+}
+
+const ACTION_SOUNDS = { expand: 'expand', village: 'village', upgrade: 'upgrade', farm: 'build', mine: 'build', lumber: 'build', pasture: 'build', fishery: 'build', road: 'build', harbor: 'build', castle: 'castle', trade: 'trade', declare_war: 'war', conquer: 'conquer', peace: 'peace', edict: 'edict', wait: null };
 
 function renderDrawer() {
   const drawer = $('drawer');
@@ -237,6 +266,7 @@ function bindMapEvents(canvas) {
     else if (k === 'g') { R().showGrid = !R().showGrid; }
     else if (k === 'l') { $('legend').classList.toggle('hidden'); return; }
     else if (k === 'h') { $('help').classList.toggle('hidden'); return; }
+    else if (k === 'm') { $('btn-mute').click(); return; }
     else return;
     R().clampCamera(); UI.needsDraw = true;
   });
@@ -348,6 +378,7 @@ function toast(msg, bad = false) {
 
 // ---------------- Selection & tile panel ----------------
 function selectTile(t) {
+  if (t && t !== UI.renderer.selected) Sound.play('select');
   UI.renderer.selected = t;
   UI.needsDraw = true;
   renderTilePanel();
@@ -448,7 +479,9 @@ function playerAction(id, tile, target) {
   if (!p.alive) { toast('Your nation has fallen.', true); return; }
   const seqBefore = g.logSeq || 0;
   const res = g.doAction(p, id, tile, target);
-  if (!res.ok) { toast(res.why, true); return; }
+  if (!res.ok) { toast(res.why, true); Sound.play('error'); return; }
+  const snd = ACTION_SOUNDS[id];
+  if (snd) Sound.play(snd);
   setMode(null);
   if (UI.turnLogStart === undefined) UI.turnLogStart = seqBefore; // first action of this turn
   if (p.ap > 0 && !g.over) {
@@ -467,7 +500,24 @@ function playerAction(id, tile, target) {
   buildReport(logStart, before);
   if (UI.drawerTab !== 'report') { UI.drawerTab = 'report'; store('drawer.tab', 'report'); }
   refreshAll();
+  // turn-end sounds: a soft chime, then a warning or event note if something happened to you
+  if (!g.over) {
+    Sound.play('turn');
+    if (UI.report.some(e => e.kind === 'bad')) setTimeout(() => Sound.play('bad'), 350);
+    else if (UI.report.some(e => e.kind === 'event')) setTimeout(() => Sound.play('event'), 350);
+    setTimeout(() => Sound.play('draw'), 700);
+  }
   if (g.over && !g.continued) showGameOver();
+}
+
+function playCardUI(id) {
+  const g = UI.game, p = UI.player;
+  const r = g.playCard(p, id);
+  if (!r.ok) { toast(r.why, true); Sound.play('error'); return; }
+  Sound.play('card');
+  toast(`${p.name} ${r.msg}`);
+  if (UI.turnLogStart === undefined) UI.turnLogStart = (g.logSeq || 0) - 1;
+  refreshAll();
 }
 
 function buildReport(logStart, before) {
@@ -528,7 +578,7 @@ function renderTopbar() {
   const ranked = g.nations.slice().sort((a, b) => g.score(b) - g.score(a));
   $('standings-sum').textContent = `Standings — you are #${ranked.indexOf(p) + 1} of ${ranked.length}`;
   $('ranking').innerHTML = ranked.map((n, i) => `<div class="rank-row${n.isPlayer ? ' me' : ''}${n.alive ? '' : ' dead'}" title="${esc(n.name)} — ${esc(n.leader.name)}">
-    <span>${i + 1}</span><span class="swatch" style="background:${n.color}"></span><span>${esc(n.colorName)}${n.isPlayer ? ' · you' : (n.alive && g.atWar(p, n) ? ' <span class="war">⚔️ war</span>' : '')}</span><span class="sc">${g.score(n)}</span></div>`).join('');
+    <span>${i + 1}</span>${flagImg(n, 'tiny')}<span>${esc(n.colorName)}${n.isPlayer ? ' · you' : (n.alive && g.atWar(p, n) ? ' <span class="war">⚔️ war</span>' : '')}</span><span class="sc">${g.score(n)}</span></div>`).join('');
 }
 
 function renderTurnPanel() {
@@ -545,8 +595,28 @@ function renderTurnPanel() {
       : 'Choose an action. Then every rival nation makes its move. More cities grant more actions per turn.';
   }
   wait.textContent = p.ap < p.apMax ? '⏳  End turn' : '⏳  End turn & save resources';
+  renderHand();
   renderQuickActions();
 }
+
+function renderHand() {
+  const g = UI.game, p = UI.player;
+  const hand = $('hand'), note = $('hand-note');
+  const played = p.cardPlayed;
+  note.textContent = played ? `Played ${CARDS[played].name} — the rest are discarded at end of turn.` : 'Play one for free this turn.';
+  const cards = played ? [played, ...p.hand] : p.hand;
+  hand.innerHTML = cards.map(id => {
+    const c = CARDS[id];
+    const affine = c.nation.includes(p.trait) || c.leader.includes(p.leader.trait);
+    const state = id === played ? ' played' : played ? ' spent' : '';
+    return `<div class="card${state}${affine ? ' affine' : ''}" data-card="${id}" title="${esc(c.desc)}${affine ? ' (favoured by your traits)' : ''}">
+      <span class="ci">${c.icon}</span><span class="cn">${esc(c.name)}</span><span class="cd">${esc(c.desc)}</span>
+      <span class="ck">${c.kind === 'now' ? 'immediate' : 'this turn'}</span>${id === played ? '<span class="cb">✓ played</span>' : !played ? '<span class="cb">Play</span>' : ''}</div>`;
+  }).join('') || '<div class="empty">No cards this turn.</div>';
+  if (!played) for (const el of hand.querySelectorAll('.card')) el.onclick = () => playCardUI(el.dataset.card);
+}
+
+const flagImg = (n, cls = '') => n.flagURL ? `<img class="flag ${cls}" src="${n.flagURL}" alt="">` : `<span class="swatch" style="background:${n.color}"></span>`;
 
 function renderReport() {
   $('report').innerHTML = UI.report.length
@@ -563,14 +633,14 @@ function renderNationPanel() {
   const pct = Math.min(100, Math.round((p.growth / need) * 100));
   $('nation-sum').textContent = `${T.name} · ${L.name} · score ${g.score(p)}`;
   $('nation-body').innerHTML = `
-    <div class="nation-head"><div class="big-swatch" style="background:${p.color}"></div>
+    <div class="nation-head">${flagImg(p, 'big')}
       <div><div class="nation-name">${esc(p.name)}</div><div class="nation-leader">${esc(p.leader.name)} · ${p.colorName} nation${p.alive ? '' : ' · <span class="neg">fallen</span>'}</div></div></div>
     <div class="trait"><b>${T.name}</b> — ${T.desc}</div>
     <div class="trait"><b>${L.name} leader</b> — ${L.desc}</div>
     <div class="stats" style="margin-top:10px">
       <span>Growth</span><span>${Math.floor(p.growth)} / ${need} <span class="note">next citizen</span><div class="bar"><div style="width:${pct}%"></div></div></span>
       <span>Territory</span><span>${p.owned.size} tiles · ${Math.round(g.claimedShare(p) * 100)}% of all claimed land</span>
-      <span>Settlements</span><span>${p.settlements.length} · ${g.workedTiles(p).size} worked tiles</span>
+      <span>Settlements</span><span>${p.settlements.length} of ${g.settlementCap(p)} allowed · ${g.workedTiles(p).size} worked tiles<br><span class="note">Towns raise the limit by 1, cities by 2.</span></span>
       <span>Castles</span><span>${p.castles.length} · attack ${g.attackStrength(p)}</span>
       <span>Trade</span><span>${p.trades.size} route${p.trades.size === 1 ? '' : 's'}</span>
     </div>`;
@@ -626,7 +696,7 @@ function renderDiploPanel() {
     }
     html += `<div class="nation-row${n.alive ? '' : ' dead'}">
       <span class="swatch" style="background:${n.color}"></span>
-      <div><div class="nm">${esc(n.name)} <span class="note">· ${n.colorName}</span></div>
+      <div><div class="nm">${flagImg(n)} ${esc(n.name)} <span class="note">· ${n.colorName}</span></div>
         <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}${n.edict ? ` · ${EDICTS[n.edict].icon} ${EDICTS[n.edict].name}` : ''}</div>
         <div class="sub">${n.alive ? `${n.owned.size} tiles · ${n.settlements.length} settlements · attack ${g.attackStrength(n)} · score ${g.score(n)}` : 'This nation has fallen.'}</div>
         <div class="sub">${status} · <span class="rel-${relL}">${relL}</span> (${Math.round(rel)})${borders ? ' · shares your border' : ''}${trading ? ` · 🤝 trading, +${g.tradeIncome(p, n)} gold/turn` : ''}</div>
@@ -657,8 +727,9 @@ function showGameOver() {
   const g = UI.game, p = UI.player;
   $('go-title').textContent = g.winner === p ? '🏆 Victory' : `${g.winner.name} prevails`;
   $('go-reason').textContent = g.reason;
+  Sound.play(g.winner === p ? 'win' : 'lose');
   const ranked = g.nations.slice().sort((a, b) => g.score(b) - g.score(a));
   $('go-table').innerHTML = '<tr><th>#</th><th>Nation</th><th>Leader</th><th>Tiles</th><th>Settlements</th><th>People</th><th>Score</th></tr>' +
-    ranked.map((n, i) => `<tr class="${n === p ? 'me' : ''}"><td>${i + 1}</td><td><span class="swatch" style="background:${n.color}"></span> ${esc(n.name)}${n.alive ? '' : ' (fallen)'}</td><td>${esc(n.leader.name)}</td><td>${n.owned.size}</td><td>${n.settlements.length}</td><td>${g.totalPop(n)}</td><td>${g.score(n)}</td></tr>`).join('');
+    ranked.map((n, i) => `<tr class="${n === p ? 'me' : ''}"><td>${i + 1}</td><td>${flagImg(n)} ${esc(n.name)}${n.alive ? '' : ' (fallen)'}</td><td>${esc(n.leader.name)}</td><td>${n.owned.size}</td><td>${n.settlements.length}</td><td>${g.totalPop(n)}</td><td>${g.score(n)}</td></tr>`).join('');
   $('gameover').classList.remove('hidden');
 }
