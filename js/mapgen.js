@@ -39,7 +39,7 @@ function generateMap({ width: W, height: H, seed, type = 'continents' }) {
       const t = 1 - Math.abs(ny) * 1.1 + tempN.fbm(x * 0.05 + 400, y * 0.05, 3) * 0.3;
       tiles[idx(x, y)] = {
         i: idx(x, y), x, y, e, m, t, h: 0,
-        terrain: 'ocean', river: false, riverTo: -1, resource: null,
+        terrain: 'ocean', river: false, riverTo: -1, resource: null, ruins: false,
         owner: null, improvement: null, settlement: null, castle: false, road: false, harbor: false,
         shade: detailN.noise2D(x * 0.9, y * 0.9),
       };
@@ -151,6 +151,12 @@ function generateMap({ width: W, height: H, seed, type = 'continents' }) {
     const opts = RESOURCES.filter(r =>
       r.terrains.includes(t.terrain) && (!r.river || t.river) && (!r.coastal || t.coastal));
     if (opts.length) t.resource = rng.pick(opts).id;
+  }
+
+  // --- 7. Ancient ruins: a one-off reward for whoever claims the tile ---
+  for (const t of tiles) {
+    if (t.water || t.terrain === 'mountains' || t.terrain === 'snow') continue;
+    if (rng.chance(0.012)) { t.ruins = true; t.resource = null; }
   }
 
   // Cleanup temp fields

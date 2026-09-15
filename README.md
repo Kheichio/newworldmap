@@ -19,7 +19,7 @@ You name your nation and leader and pick a **colour**; each colour has a fixed n
 
 ## Turns
 
-Every nation, including yours, takes **exactly one action per turn**:
+Every nation gets **1 action per turn, plus 1 for every two cities (max 3)**. Actions:
 
 | Action | Effect |
 | --- | --- |
@@ -31,8 +31,13 @@ Every nation, including yours, takes **exactly one action per turn**:
 | Harbour | Coastal settlements: gold, food, and sea trade |
 | Castle | Claims nearby land, defends everything within 2 tiles, adds attack strength |
 | Trade route | Both nations earn gold every turn; relations improve |
-| Conquer | Take an enemy border tile (or settlement) when your attack beats its defence |
-| Wait | Save resources |
+| Declare war | Required before any conquest; ends trade, sours relations |
+| Conquer | Take a border tile (or settlement — with plunder) from a nation you are at war with, when your attack beats its defence |
+| Offer peace | The weaker or wearier side usually accepts; a 10-turn truce follows. Accepting an offer is free |
+| Edict | A 12-turn policy: Harvest Festival, Great Levy, Market Fairs or Corvée Labour |
+| End turn | Save resources |
+
+Also in play: **ancient ruins** 🏺 that reward whoever claims them, and **random events** (harvests, plagues, migrants, bandits, storms, wildfires) that strike every nation now and then — castles keep bandits away.
 
 Key rules:
 
@@ -40,7 +45,8 @@ Key rules:
 - **Food** is a flow: it feeds population and surplus grows your settlements; a shortfall causes famine.
 - **Materials** build things; **gold** pays for expansion, trade, conquest and upkeep. Costs scale with the size of your nation.
 - Borders **grow naturally** around settlements each turn.
-- Relations drift: trade and charismatic leaders warm them; shared borders, land hunger and warlike neighbours cool them. Hostile AI nations will attack.
+- Relations drift: trade and charismatic leaders warm them; shared borders, land hunger and warlike neighbours cool them. Hostile AI nations will declare war when they think they can win, and sue for peace when they are losing.
+- Tiles are drawn as irregular polygons (every grid vertex is displaced by seeded noise), so the world reads as an organic mosaic; hit-testing follows the real shapes.
 - **Win** by holding half of all claimed land, being the last nation standing, or top score at the turn limit.
 
 **Playing a turn:** use the quick actions in the sidebar (Expand, Village, Improve, Road, Castle, Conquer) — each one lights up every valid tile on the map and dims the rest; click one to act. Or click any tile to inspect it and pick from its panel, which shows costs and the yield each improvement would give. The **Last turn** panel summarises what happened to you; hatched tiles are yours but idle (no settlement within 2).

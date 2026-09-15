@@ -17,11 +17,13 @@ class Game {
     this.log = [];
     this.actionCounts = {};
     this.relations = {};
+    this.wars = new Set();   // "a|b" keys (a < b) of nations at war
+    this.truces = {};        // "a|b" -> turn until which no war may be declared
     this.over = false;
     this.winner = null;
     this.createNations(setup);
     this.placeNations();
-    for (const n of this.nations) n.income = this.computeIncome(n);
+    for (const n of this.nations) { n.income = this.computeIncome(n); this.resetActions(n); }
   }
 
   // ---------- Grid helpers ----------
@@ -43,7 +45,12 @@ class Game {
   }
   dist(a, b) { return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)); }
   nation(id) { return this.nations[id]; }
-  addLog(msg, nation) { this.log.push({ turn: this.turn, msg, nation: nation ? nation.id : null }); if (this.log.length > 300) this.log.shift(); }
+  addLog(msg, nation) {
+    this.logSeq = (this.logSeq || 0) + 1;
+    this.log.push({ seq: this.logSeq, turn: this.turn, msg, nation: nation ? nation.id : null });
+    if (this.log.length > 600) this.log.shift();
+  }
+  logSince(seq) { return this.log.filter(e => e.seq > seq); }
 
   // ---------- Setup ----------
   createNations(setup) {
@@ -68,7 +75,53 @@ class Game {
       mat: 30, gold: 40, growth: 0, idle: 0,
       owned: new Set(), settlements: [], castles: [], trades: new Set(),
       capital: -1, alive: true, conquests: 0, lastAction: '—', income: null,
+      ap: 1, apMax: 1,                 // actions per turn
+      edict: null, edictUntil: 0,      // active policy
+      relics: 0,                       // score from explored ruins
+      peaceOffers: new Set(),          // nations offering peace to this one
+      lostTiles: 0,                    // tiles lost in current wars (for AI peace decisions)
     };
+  }
+
+  // ---------- Actions per turn ----------
+  // 1 action per turn, +1 for every two cities, up to 3.
+  actionsPerTurn(n) {
+    let cities = 0;
+    for (const i of n.settlements) if (this.tiles[i].settlement.type === 'city') cities++;
+    return Math.min(3, 1 + Math.floor(cities / 2));
+  }
+  resetActions(n) { n.apMax = this.actionsPerTurn(n); n.ap = n.apMax; }
+
+  // ---------- War & peace ----------
+  warKey(a, b) { return a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`; }
+  atWar(a, b) { return this.wars.has(this.warKey(a, b)); }
+  enemies(n) { return this.nations.filter(o => o !== n && o.alive && this.atWar(n, o)); }
+  truceActive(a, b) { return (this.truces[this.warKey(a, b)] || 0) > this.turn; }
+  declareWar(a, b) {
+    this.wars.add(this.warKey(a, b));
+    if (a.trades.has(b.id)) { a.trades.delete(b.id); b.trades.delete(a.id); }
+    a.peaceOffers.delete(b.id); b.peaceOffers.delete(a.id);
+    a.lostTiles = 0; b.lostTiles = 0;
+    this.shiftRel(a, b, -30);
+    for (const x of this.nations) {
+      if (x === a || x === b || !x.alive) continue;
+      if (x.trades.has(b.id) || this.bordersNation(x, b)) this.shiftRel(a, x, -5);
+    }
+  }
+  makePeace(a, b) {
+    this.wars.delete(this.warKey(a, b));
+    this.truces[this.warKey(a, b)] = this.turn + TRUCE_TURNS;
+    a.peaceOffers.delete(b.id); b.peaceOffers.delete(a.id);
+    this.shiftRel(a, b, 15);
+  }
+  // Would `o` accept peace from `n`? Weaker, weary or not-so-hostile nations do.
+  acceptsPeace(o, n) {
+    if (o.isPlayer) return false; // the player answers offers through the UI
+    const rel = this.rel(o, n);
+    if (rel > -35) return true;
+    if (o.lostTiles >= 3) return true;
+    if (this.attackStrength(n) > this.attackStrength(o) + 3) return true;
+    return this.rng.chance(0.15);
   }
 
   placeNations() {
@@ -109,6 +162,21 @@ class Game {
     n.owned.add(t.i);
     if (t.settlement) { if (!n.settlements.includes(t.i)) n.settlements.push(t.i); t.settlement.owner = n.id; }
     if (t.castle && !n.castles.includes(t.i)) n.castles.push(t.i);
+    if (t.ruins) this.exploreRuins(n, t);
+  }
+
+  // Ancient ruins give a one-off reward to whoever claims them.
+  exploreRuins(n, t) {
+    t.ruins = false;
+    const size = 1 + n.owned.size / 40;
+    const roll = this.rng.float();
+    let msg;
+    if (roll < 0.3) { const g = Math.round((30 + this.rng.int(0, 30)) * size); n.gold += g; msg = `a forgotten treasury: +${g} gold`; }
+    else if (roll < 0.55) { const m = Math.round((40 + this.rng.int(0, 30)) * size); n.mat += m; msg = `cut stone and timber: +${m} materials`; }
+    else if (roll < 0.75) { n.growth += 20; msg = `survivors who join your people (+20 growth)`; }
+    else if (roll < 0.9) { n.relics++; msg = `a sacred relic (+15 score)`; }
+    else { for (const nb of this.neighbors(t)) if (nb.owner === null && nb.terrain !== 'ocean') this.claim(n, nb); msg = `old boundary stones — the surrounding land is yours`; }
+    this.addLog(`${n.name} explores ancient ruins at (${t.x}, ${t.y}) and finds ${msg}.`, n);
   }
 
   foundSettlement(n, t, type, pop, capital = false) {
@@ -206,10 +274,14 @@ class Game {
       if (connected.has(i) && !s.capital) gold += 2;
     }
     for (const id of n.trades) { const o = this.nation(id); if (o.alive) gold += this.tradeIncome(n, o); }
+    if (n.edict === 'fairs') gold += n.trades.size * 3;
     if (n.trait === 'mercantile') gold = Math.round(gold * 1.25);
     if (n.leader.trait === 'frugal') gold = Math.round(gold * 1.15);
     if (n.leader.trait === 'industrious') mat = Math.round(mat * 1.15);
     if (n.leader.trait === 'bountiful') food = Math.round(food * 1.15);
+    if (n.edict === 'harvest') food = Math.round(food * 1.2);
+    if (n.edict === 'corvee') food = Math.round(food * 0.9);
+    if (n.edict === 'levy') gold = Math.round(gold * 0.8);
     // Upkeep: settlements, castles, harbours and roads cost gold; improvements cost materials.
     let goldUp = 0, matUp = 0, roads = 0, imps = 0;
     for (const i of n.settlements) { const t = this.tiles[i]; goldUp += SETTLEMENTS[t.settlement.type].upkeep; if (t.harbor) goldUp += 1; }
@@ -231,6 +303,7 @@ class Game {
     a += Math.floor(this.totalPop(n) / 15);
     if (n.trait === 'martial') a += 2;
     if (n.leader.trait === 'warlike') a += 2;
+    if (n.edict === 'levy') a += 3;
     return a;
   }
   defenseAt(n, t) {
@@ -242,6 +315,7 @@ class Game {
     if (t.conqueredTurn && this.turn - t.conqueredTurn < 6) d += 3; // fresh garrison
     if (n.leader.trait === 'stalwart') d += 3;
     if (n.trait === 'martial') d += 1;
+    if (n.edict === 'levy') d += 2;
     d += this.neighbors(t).filter(nb => nb.owner === n.id).length * 0.5;
     return d;
   }
@@ -265,6 +339,7 @@ class Game {
     if (kind === 'village' && T === 'builders') m *= 0.75;
     if (kind === 'upgrade' && T === 'scholarly') m *= 0.7;
     if (kind === 'harbor' && T === 'maritime') m *= 0.5;
+    if (n.edict === 'corvee' && ['improve', 'road', 'castle', 'village'].includes(kind)) m *= 0.75;
     return m;
   }
   scaleCost(cost, m) {
@@ -315,10 +390,37 @@ class Game {
         if (!this.isFrontier(n, t)) return r(false, 'Must border your territory.', cost, 'Conquer');
         const o = this.nation(t.owner);
         const atk = this.attackStrength(n), def = this.defenseAt(o, t);
-        const label = `Conquer (${atk} vs ${def.toFixed(1)})`;
+        const label = `Conquer (attack ${atk} vs defence ${def.toFixed(1)})`;
+        if (!this.atWar(n, o)) return r(false, `You are not at war with ${o.name}. Declare war first (Other nations panel).`, cost, label);
         if (!this.canAfford(n, cost)) return r(false, 'Cannot afford: ' + this.costStr(cost), cost, label);
         if (atk <= def) return r(false, `Too well defended (your attack ${atk} vs defence ${def.toFixed(1)}).`, cost, label);
         return r(true, '', cost, label);
+      }
+      case 'declare_war': {
+        const o = this.nation(target);
+        if (!o || o.id === n.id || !o.alive) return r(false, 'Choose a nation.', {}, 'Declare war');
+        if (this.atWar(n, o)) return r(false, 'Already at war.', {}, 'Declare war');
+        if (this.truceActive(n, o)) return r(false, `A truce holds until turn ${this.truces[this.warKey(n, o)]}.`, {}, 'Declare war');
+        if (!this.bordersNation(n, o) && !(this.hasHarbor(n) && this.hasHarbor(o))) return r(false, 'You need a shared border, or harbours on both sides, to reach them.', {}, 'Declare war');
+        return r(true, 'Relations will sour and trade with them ends.', {}, 'Declare war');
+      }
+      case 'peace': {
+        const cost = COSTS.peace;
+        const o = this.nation(target);
+        if (!o || o.id === n.id || !o.alive) return r(false, 'Choose a nation.', cost, 'Offer peace');
+        if (!this.atWar(n, o)) return r(false, 'Not at war.', cost, 'Offer peace');
+        if (n.peaceOffers.has(o.id)) return r(true, 'They have already offered peace — accepting is free.', {}, 'Accept peace');
+        if (o.peaceOffers.has(n.id)) return r(false, 'Your offer already stands; they have not answered.', cost, 'Offer peace');
+        if (!this.canAfford(n, cost)) return r(false, 'Cannot afford: ' + this.costStr(cost), cost, 'Offer peace');
+        return r(true, 'They may refuse if they feel they are winning.', cost, 'Offer peace');
+      }
+      case 'edict': {
+        const cost = this.scaleCost(COSTS.edict, 1 + n.owned.size / 100);
+        const E = EDICTS[target];
+        if (!E) return r(false, 'Choose an edict.', cost, 'Proclaim edict');
+        if (n.edict === target) return r(false, 'Already in force.', cost, E.name);
+        if (!this.canAfford(n, cost)) return r(false, 'Cannot afford: ' + this.costStr(cost), cost, E.name);
+        return r(true, `${EDICT_TURNS} turns.`, cost, E.name);
       }
       case 'farm': case 'mine': case 'lumber': case 'pasture': case 'fishery': {
         const I = IMPROVEMENTS[id];
@@ -444,8 +546,27 @@ class Game {
         msg = `opens a trade route with ${o.name}.`; break;
       }
       case 'conquer': msg = this.resolveConquest(n, t); break;
+      case 'declare_war': {
+        const o = this.nation(target);
+        this.declareWar(n, o);
+        msg = `declares war on ${o.name}!`; break;
+      }
+      case 'peace': {
+        const o = this.nation(target);
+        if (n.peaceOffers.has(o.id) || this.acceptsPeace(o, n)) { this.makePeace(n, o); msg = `makes peace with ${o.name}. A truce holds for ${TRUCE_TURNS} turns.`; }
+        else if (o.isPlayer) { o.peaceOffers.add(n.id); msg = `offers peace to ${o.name}.`; }
+        else msg = `offers peace to ${o.name}, who refuses.`;
+        break;
+      }
+      case 'edict': {
+        n.edict = target; n.edictUntil = this.turn + EDICT_TURNS;
+        msg = `proclaims the ${EDICTS[target].name}.`; break;
+      }
     }
     n.lastAction = c.label;
+    // Spend an action point; waiting ends the turn. Accepting an offered peace is free.
+    const free = id === 'peace' && c.label === 'Accept peace';
+    if (id === 'wait') n.ap = 0; else if (!free) n.ap = Math.max(0, n.ap - 1);
     n.idle = id === 'wait' ? n.idle + 1 : 0;
     this.actionCounts[id] = (this.actionCounts[id] || 0) + 1;
     this.addLog(`${n.name} ${msg}`, n);
@@ -460,15 +581,20 @@ class Game {
     t.conqueredTurn = this.turn;
     if (t.settlement) t.settlement.capital = false;
     n.conquests++;
-    if (n.trades.has(o.id)) { n.trades.delete(o.id); o.trades.delete(n.id); }
-    this.shiftRel(n, o, -30);
+    o.lostTiles++;
+    this.shiftRel(n, o, -10);
     // Third parties who border or trade with the victim take offence.
-    const anger = n.leader.trait === 'reckless' ? -8 : -4;
+    const anger = n.leader.trait === 'reckless' ? -6 : -3;
     for (const x of this.nations) {
       if (x === n || x === o || !x.alive) continue;
       if (x.trades.has(o.id) || this.bordersNation(x, o)) this.shiftRel(n, x, anger);
     }
     let msg = wasSettlement ? `conquers the ${wasSettlement} from ${o.name}!` : `seizes land at (${t.x}, ${t.y}) from ${o.name}.`;
+    if (t.settlement) { // plunder
+      const pg = t.settlement.pop * 8, pm = t.settlement.pop * 4;
+      n.gold += pg; n.mat += pm;
+      msg += ` Plunder: +${pg} gold, +${pm} materials.`;
+    }
     if (wasCapital) {
       if (o.settlements.length) {
         o.capital = o.settlements[0]; this.tiles[o.capital].settlement.capital = true;
@@ -524,11 +650,47 @@ class Game {
           if (n.isPlayer && !n.growthWarned) { this.addLog(`Your settlements are full — upgrade one or found a village so your people can grow.`, n); n.growthWarned = true; }
         }
       }
+      if (n.edict && this.turn >= n.edictUntil) { this.addLog(`The ${EDICTS[n.edict].name} of ${n.name} comes to an end.`, n); n.edict = null; }
+      this.randomEvent(n);
     }
     this.updateRelations();
-    for (const n of this.nations) n.income = this.computeIncome(n);
+    for (const n of this.nations) { n.income = this.computeIncome(n); this.resetActions(n); }
     this.turn++;
     this.checkEnd();
+  }
+
+  // ---------- Random events ----------
+  randomEvent(n) {
+    if (!this.rng.chance(EVENT_CHANCE) || !n.settlements.length) return;
+    const setts = n.settlements.map(i => this.tiles[i]);
+    const s = this.rng.pick(setts);
+    const size = 1 + n.owned.size / 40;
+    const roll = this.rng.float();
+    let msg;
+    if (roll < 0.18) { n.growth += 15; msg = `A bountiful harvest blesses ${n.name} (+15 growth).`; }
+    else if (roll < 0.32) { const g = Math.round(25 * size); n.gold += g; msg = `Merchants bring rare goods to ${s.settlement.name}: ${n.name} gains ${g} gold.`; }
+    else if (roll < 0.44) {
+      const room = s.settlement.pop < SETTLEMENTS[s.settlement.type].maxPop;
+      if (room) { s.settlement.pop++; msg = `Migrants settle in ${s.settlement.name} (${n.name}): population ${s.settlement.pop}.`; }
+      else { n.growth += 10; msg = `Migrants arrive at the gates of ${s.settlement.name} (${n.name}) (+10 growth).`; }
+    }
+    else if (roll < 0.58) {
+      if (s.settlement.pop > 1) { const loss = Math.min(s.settlement.pop - 1, s.settlement.type === 'city' ? 2 : 1); s.settlement.pop -= loss; msg = `Plague strikes ${s.settlement.name} (${n.name}): population falls to ${s.settlement.pop}.`; }
+      else msg = `A sickness passes through ${s.settlement.name} (${n.name}) but claims no lives.`;
+    }
+    else if (roll < 0.70) {
+      const guarded = n.castles.some(i => this.dist(this.tiles[i], s) <= 3);
+      if (guarded) msg = `Bandits threaten ${s.settlement.name}, but ${n.name}'s castle drives them off.`;
+      else { const g = Math.round(n.gold * 0.15); n.gold -= g; msg = `Bandits raid the roads near ${s.settlement.name}: ${n.name} loses ${g} gold. A castle nearby would have stopped them.`; }
+    }
+    else if (roll < 0.82) {
+      const targets = Array.from(n.owned, i => this.tiles[i]).filter(t => t.improvement && (t.coastal || t.water || t.improvement === 'lumber'));
+      if (targets.length) { const t = this.rng.pick(targets); const what = IMPROVEMENTS[t.improvement].name.toLowerCase(); t.improvement = null; msg = `${t.water || t.coastal ? 'A storm' : 'Wildfire'} destroys the ${what} at (${t.x}, ${t.y}) belonging to ${n.name}.`; }
+      else msg = `A storm batters the coasts of ${n.name} but does little harm.`;
+    }
+    else if (roll < 0.92) { const m = Math.round(30 * size); n.mat += m; msg = `Quarrymen of ${n.name} strike a fine seam of stone: +${m} materials.`; }
+    else { n.relics++; msg = `Scholars of ${n.name} recover a lost chronicle (+15 score).`; }
+    this.addLog(`Event: ${msg}`, n);
   }
 
   // Unowned, claimable tiles bordering a nation — few of them means it is boxed in.
@@ -560,8 +722,9 @@ class Game {
       if (o.id <= n.id) continue;
       const k = this.relKey(n, o);
       let v = this.relations[k] || 0;
+      if (this.atWar(n, o)) { this.relations[k] = Math.max(-100, v - 1); continue; }
       const trading = n.trades.has(o.id);
-      if (trading && v < 60) v += 2;
+      if (trading && v < 60) v += (n.edict === 'fairs' || o.edict === 'fairs') ? 3 : 2;
       if (n.leader.trait === 'charismatic' || o.leader.trait === 'charismatic') v += 1.5;
       if (this.turn > 12 && this.bordersNation(n, o)) {
         let friction = trading ? 0 : 0.75;
@@ -607,7 +770,7 @@ class Game {
   score(n) {
     let s = n.owned.size;
     for (const i of n.settlements) { const st = this.tiles[i].settlement; s += SETTLEMENTS[st.type].score + st.pop; }
-    s += n.castles.length * 8 + n.trades.size * 4 + Math.floor(n.gold / 20);
+    s += n.castles.length * 8 + n.trades.size * 4 + Math.floor(n.gold / 20) + n.relics * 15;
     return Math.round(s);
   }
   checkEnd() {
@@ -774,7 +937,7 @@ class Game {
     }
 
     // Castles
-    const threatened = this.nations.some(o => o !== n && o.alive && this.rel(n, o) < -10 && this.bordersNation(n, o));
+    const threatened = this.nations.some(o => o !== n && o.alive && (this.atWar(n, o) || this.rel(n, o) < -10) && this.bordersNation(n, o));
     if (n.owned.size > 14 && n.castles.length < 1 + Math.floor(n.owned.size / 30)) {
       let best = null, bv = -1;
       const castleZone = new Set();
@@ -794,23 +957,45 @@ class Game {
       if (best) add(2.5 + (threatened ? 4 : 0) + (T === 'martial' ? 1.5 : 0) + bv * 0.3, 'castle', best);
     }
 
-    // Conquest
+    // War: conquest against nations we are at war with; declarations against those we resent.
     const atk = this.attackStrength(n);
     const conquerCost = this.scaleCost(COSTS.conquer, this.costMul(n, 'conquer'));
     const landHungry = this.expandCost(n).gold > conquerCost.gold * 1.5 || landFrontier < 4;
     const seenEnemy = new Set();
+    const warTargets = new Map(); // nation id -> best case for declaring war
     for (const i of n.owned) for (const nb of this.neighbors(this.tiles[i])) {
       if (nb.owner === null || nb.owner === n.id || seenEnemy.has(nb.i)) continue;
       seenEnemy.add(nb.i);
       const o = this.nation(nb.owner);
       const relv = this.rel(n, o);
-      if (relv >= 30 && L !== 'reckless') continue;
-      if (relv > -15 && !aggressive) continue;
       const def = this.defenseAt(o, nb);
       if (atk <= def) continue;
       let s = (relv < -20 ? 6 : 2.5) + this.tileValue(nb, n) * 0.4 + (nb.settlement ? 5 : 0) + (aggressive ? 1.5 : 0) + (landHungry ? 2.5 : 0);
       if (atk - def < 2) s -= 1;
-      add(s, 'conquer', nb);
+      if (this.atWar(n, o)) add(s + 1, 'conquer', nb);
+      else {
+        if (relv >= 30 && L !== 'reckless') continue;
+        if (relv > -15 && !aggressive) continue;
+        if (this.truceActive(n, o)) continue;
+        if (!warTargets.has(o.id) || warTargets.get(o.id) < s) warTargets.set(o.id, s);
+      }
+    }
+    // Declaring war is a whole action, so only worth it when several good targets exist and we are stronger.
+    for (const [oid, s] of warTargets) {
+      const o = this.nation(oid);
+      if (this.attackStrength(o) > atk + 2 && !aggressive) continue;
+      if (this.enemies(n).length >= 2) continue; // no third front
+      add(s - 1.5, 'declare_war', null, oid);
+    }
+    // Peace: when weary, losing, or no longer able to make progress.
+    for (const o of this.enemies(n)) {
+      const stalled = !cands.some(c => c.id === 'conquer' && this.tiles[c.tile.i].owner === o.id);
+      if (n.lostTiles >= 3 || (stalled && this.rel(n, o) > -60) || this.attackStrength(o) > atk + 4) add(4 + n.lostTiles, 'peace', null, o.id);
+    }
+    // Edicts: pick one that suits the moment.
+    if (!n.edict || this.turn >= n.edictUntil - 2) {
+      const want = this.enemies(n).length ? 'levy' : (T === 'mercantile' && n.trades.size >= 2) ? 'fairs' : (n.growth < this.growthNeed(this.totalPop(n)) * 0.5 && T !== 'builders') ? 'harvest' : 'corvee';
+      if (want !== n.edict) add(4.5 + (want === 'levy' ? 2 : 0), 'edict', null, want);
     }
 
     // Choose: best affordable, unless something much better is worth saving for.
@@ -833,6 +1018,10 @@ class Game {
   }
 
   runAITurns() {
-    for (const n of this.nations) if (!n.isPlayer && n.alive) this.aiTurn(n);
+    for (const n of this.nations) {
+      if (n.isPlayer || !n.alive) continue;
+      let guard = 5;
+      while (n.ap > 0 && guard-- > 0) this.aiTurn(n);
+    }
   }
 }

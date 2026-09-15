@@ -6,7 +6,7 @@
   <title>New World Map</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Alegreya:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -49,6 +49,7 @@
             <span class="lg-sym"><i class="sym harbor"></i></span><span>Harbour (blue corner)</span>
             <span class="lg-sym"><i class="sym imp"></i></span><span>Improvement (top-right icon)</span>
             <span class="lg-sym">🌾🐄⛏️</span><span>Resource on tile</span>
+            <span class="lg-sym">🏺</span><span>Ancient ruins — claim the tile to explore</span>
             <span class="lg-sym"><i class="sym road"></i></span><span>Road</span>
             <span class="lg-sym"><i class="sym river"></i></span><span>River</span>
             <span class="lg-sym"><i class="sym border"></i></span><span>Border (nation colour)</span>
@@ -64,20 +65,23 @@
         <section id="turn-panel" class="plate panel">
           <div class="turn-head">
             <div class="turn-title" id="turn-title">Your move</div>
-            <div class="turn-sub" id="turn-sub">Choose one action. Then every rival nation makes its move.</div>
+            <div class="ap" id="ap-info"></div>
           </div>
+          <div class="turn-sub" id="turn-sub">Choose an action. When your actions are spent, every rival nation moves.</div>
           <div class="quick-grid" id="quick-actions"></div>
-          <button id="btn-wait" class="btn wide" title="Take no action this turn and keep your resources (Space)">⏳ &nbsp;Wait &amp; save resources</button>
+          <button id="btn-wait" class="btn wide" title="End your turn now and keep your resources (Space)">⏳ &nbsp;End turn &amp; save resources</button>
         </section>
 
         <section id="tile-panel" class="plate panel"></section>
 
         <section id="report-panel" class="plate panel">
-          <h3 class="engraved">Last turn</h3>
+          <h3 class="engraved">Since your last move</h3>
           <div id="report" class="report"></div>
         </section>
 
         <section id="nation-panel" class="plate panel"></section>
+
+        <section id="edict-panel" class="plate panel"></section>
 
         <section id="diplo-panel" class="plate panel"></section>
 
@@ -127,15 +131,17 @@
     <div class="modal-box plate">
       <h2 class="engraved">How to play</h2>
       <ul class="help">
-        <li><b>One action per turn.</b> Use the quick actions (they highlight every valid tile), or click any tile and choose from its panel. Press <kbd>Space</kbd> to wait. Then every rival acts and the turn ends.</li>
-        <li><b>Land only produces when worked</b> — within 2 tiles of one of your settlements. Hatched tiles on the map are yours but idle: found a village nearby to put them to work.</li>
-        <li><b>Food</b> feeds population; the surplus fills the growth bar and adds people to your settlements. Villages become towns (pop 4) and cities (pop 9). A shortfall causes famine.</li>
-        <li><b>Materials</b> build improvements, roads, settlements and castles. <b>Gold</b> pays for expansion, trade, conquest and upkeep. Costs rise as your nation grows.</li>
-        <li><b>Resources</b> on a tile give a taste of their yield; the matching improvement (pasture, mine, lumber camp, farm, fishery) unlocks the full yield.</li>
+        <li><b>Actions.</b> You get 1 action per turn, plus 1 for every two cities (up to 3). Use the quick actions (they highlight every valid tile) or click any tile and choose from its panel. Press <kbd>Space</kbd> to end your turn early. When your actions are spent, every rival moves.</li>
+        <li><b>Land only produces when worked</b> — within 2 tiles of one of your settlements. Hatched tiles are yours but idle: found a village nearby to put them to work.</li>
+        <li><b>Food</b> feeds your people; the surplus fills the growth bar and adds citizens. Villages become towns (4 people) and cities (9). A shortfall causes famine.</li>
+        <li><b>Materials</b> build improvements, roads, settlements and castles. <b>Gold</b> pays for expansion, trade, war, edicts and upkeep. Costs rise as your nation grows.</li>
+        <li><b>Resources</b> give a taste of their yield; the matching improvement (pasture, mine, lumber camp, farm, fishery) unlocks the full yield. <b>Ruins</b> 🏺 reward whoever claims them.</li>
         <li><b>Borders grow by themselves</b> around settlements every turn. <b>Expand</b> grabs a specific tile now. Villages can be founded on free land touching your border.</li>
-        <li><b>Roads</b> that link a settlement to your capital earn gold. <b>Harbours</b> on coastal settlements earn gold and food and allow sea trade.</li>
-        <li><b>Trade routes</b> pay both nations every turn and warm relations. Shared borders without trade, land hunger and warlike leaders cool them — hostile neighbours will attack.</li>
-        <li><b>Castles</b> claim nearby land, defend everything within 2 tiles and raise your attack. <b>Conquer</b> an enemy border tile when your attack beats its defence (shown on the button).</li>
+        <li><b>Roads</b> linking a settlement to your capital earn gold. <b>Harbours</b> earn gold and food and allow trade (and war) across the sea.</li>
+        <li><b>Trade routes</b> pay both nations every turn and warm relations. Shared borders without trade, land hunger and warlike leaders cool them.</li>
+        <li><b>War must be declared</b> (Other nations panel) before anyone can conquer. Conquering a settlement plunders it. <b>Offer peace</b> when you have had enough — the weaker or wearier side usually accepts, and a 10-turn truce follows. <b>Castles</b> defend everything within 2 tiles and raise your attack.</li>
+        <li><b>Edicts</b> are national policies lasting 12 turns: Harvest Festival, Great Levy, Market Fairs or Corvée Labour.</li>
+        <li><b>Events</b> — harvests, plagues, migrants, bandits, storms — strike every nation now and then. Castles keep bandits away.</li>
         <li><b>Win</b> by holding half of all claimed land, being the last nation standing, or having the highest score at the turn limit.</li>
         <li>Drag / <kbd>WASD</kbd> / arrows to pan · scroll to zoom · <kbd>C</kbd> capital · <kbd>L</kbd> legend · <kbd>G</kbd> grid · <kbd>Esc</kbd> cancel.</li>
       </ul>

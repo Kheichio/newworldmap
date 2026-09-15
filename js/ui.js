@@ -33,7 +33,7 @@ const QUICK = [
   { id: 'improve', icon: '🛠️', name: 'Improve',  hint: 'Farm, mine, lumber camp, pasture or fishery', pick: true },
   { id: 'road',    icon: '🛤️', name: 'Road',     hint: 'Link settlements to your capital for gold' },
   { id: 'castle',  icon: '🏰', name: 'Castle',   hint: 'Claim and defend land, raise your attack' },
-  { id: 'conquer', icon: '⚔️', name: 'Conquer',  hint: 'Seize an enemy border tile' },
+  { id: 'conquer', icon: '⚔️', name: 'Conquer',  hint: 'Seize a border tile from a nation you are at war with' },
 ];
 
 // ---------------- Setup screen ----------------
@@ -116,10 +116,9 @@ function initMap() {
     window.addEventListener('resize', resizeCanvas);
     requestAnimationFrame(frame);
   } else {
-    UI.renderer.game = UI.game;
     UI.renderer.hover = UI.renderer.selected = UI.renderer.highlight = null;
     UI.renderer.cam.zoom = 1.5;
-    UI.renderer.buildTerrainCache();
+    UI.renderer.setGame(UI.game);
   }
   UI.renderer.player = UI.player;
   resizeCanvas();
@@ -259,7 +258,9 @@ function renderQuickActions() {
     else if (q.id === 'castle') cost = costHtml(g.scaleCost(COSTS.castle, g.costMul(p, 'castle')));
     else if (q.id === 'conquer') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer')));
     else cost = 'varies';
-    const title = `${q.hint}. ${n ? `${n} valid tile${n === 1 ? '' : 's'}.` : 'No valid tiles right now (check cost or requirements).'}`;
+    let why = 'No valid tiles right now (check cost or requirements).';
+    if (q.id === 'conquer' && !g.enemies(p).length) why = 'You are not at war. Declare war in the Other nations panel first.';
+    const title = `${q.hint}. ${n ? `${n} valid tile${n === 1 ? '' : 's'}.` : why}`;
     return `<button class="quick${UI.mode === q.id ? ' active' : ''}" data-mode="${q.id}" ${n ? '' : 'disabled'} title="${esc(title)}">
       <span class="qi">${q.icon}</span><span>${q.name}</span><span class="qn">${n ? `${n} tile${n === 1 ? '' : 's'} · ${cost}` : cost}</span></button>`;
   }).join('');
@@ -277,6 +278,7 @@ function showTooltip(t, x, y) {
   if (t.river && !t.water) html += ' <span class="dim">· river</span>';
   if (t.coastal) html += ' <span class="dim">· coastal</span>';
   if (t.resource) { const r = RESOURCE_BY_ID[t.resource]; html += `<br>${r.icon} ${r.name} <span class="dim">(${CATEGORY_NAMES[r.cat].toLowerCase()})</span>`; }
+  if (t.ruins) html += '<br>🏺 Ancient ruins <span class="dim">— claim to explore</span>';
   html += `<br>Yield ${yieldStr(y0)}`;
   if (t.improvement) html += ` <span class="dim">· ${IMPROVEMENTS[t.improvement].name.toLowerCase()}</span>`;
   if (t.settlement) html += `<br>🏘️ ${esc(t.settlement.name)} — ${SETTLEMENTS[t.settlement.type].name.toLowerCase()}, pop ${t.settlement.pop}${t.settlement.capital ? ', capital' : ''}${t.harbor ? ', harbour' : ''}`;
@@ -334,7 +336,9 @@ function renderTilePanel() {
   if (t.castle) tags.push('<span class="tag">🏰 Castle</span>');
   if (t.harbor) tags.push('<span class="tag">⚓ Harbour</span>');
   if (mine) tags.push(g.isWorked(t, p) ? '<span class="tag good">Worked</span>' : '<span class="tag warn">Idle — no settlement within 2</span>');
-  if (t.conqueredTurn && g.turn - t.conqueredTurn < 6) tags.push('<span class="tag">Garrisoned</span>');
+  if (t.ruins) tags.push('<span class="tag gold">🏺 Ancient ruins — claim to explore</span>');
+  if (owner && !mine) tags.push(g.atWar(p, owner) ? '<span class="tag warn">⚔️ At war</span>' : '<span class="tag">At peace</span>');
+  if (t.conqueredTurn && g.turn - t.conqueredTurn < 6) tags.push('<span class="tag">Garrisoned (+3 defence)</span>');
   if (tags.length) html += `<div class="tags">${tags.join('')}</div>`;
   html += '<div class="kv">';
   html += `<span>Yield</span><span class="yield">${yieldStr(y)}${mine && !g.isWorked(t, p) ? ' <span class="note">(not collected)</span>' : ''}</span>`;
@@ -396,12 +400,21 @@ function playerAction(id, tile, target) {
   const g = UI.game, p = UI.player;
   if (g.over && !g.continued) { $('gameover').classList.remove('hidden'); return; }
   if (!p.alive) { toast('Your nation has fallen.', true); return; }
+  const seqBefore = g.logSeq || 0;
   const res = g.doAction(p, id, tile, target);
   if (!res.ok) { toast(res.why, true); return; }
-  UI.busy = true;
   setMode(null);
-  const logStart = g.log.length - 1; // include the player's own action
-  const before = { gold: p.gold, mat: p.mat, tiles: p.owned.size, pop: g.totalPop(p) };
+  if (UI.turnLogStart === undefined) UI.turnLogStart = seqBefore; // first action of this turn
+  if (p.ap > 0 && !g.over) {
+    // Actions remain: stay in the player's turn.
+    toast(`${res.msg.charAt(0).toUpperCase() + res.msg.slice(1)}  —  ${p.ap} action${p.ap === 1 ? '' : 's'} left.`);
+    refreshAll();
+    return;
+  }
+  UI.busy = true;
+  const logStart = UI.turnLogStart;
+  UI.turnLogStart = undefined;
+  const before = { tiles: p.owned.size };
   g.runAITurns();
   g.endTurn();
   UI.busy = false;
@@ -416,23 +429,27 @@ function buildReport(logStart, before) {
   const inc = p.income;
   ev.push({ kind: 'gold', msg: `Income: ${fmtDelta(inc.gold)} gold, ${fmtDelta(inc.mat)} materials, food ${fmtDelta(inc.net)} after feeding ${inc.pop} people.` });
   const tilesNow = p.owned.size;
-  for (const e of g.log.slice(logStart)) {
+  for (const e of g.logSince(logStart)) {
     const m = e.msg;
     const aboutMe = e.nation === p.id || m.includes(p.name);
     if (!aboutMe) continue;
     let kind = 'neutral';
-    if (/conquers|seizes|fallen/.test(m)) kind = m.startsWith(p.name) ? 'good' : 'bad';
-    else if (/Famine/.test(m)) kind = 'bad';
-    else if (/grows|borders/.test(m)) kind = 'good';
-    else if (/trade route/.test(m)) kind = 'gold';
+    if (/^Event:/.test(m)) kind = 'event';
+    else if (/declares war on/.test(m)) kind = m.startsWith(p.name) ? 'neutral' : 'bad';
+    else if (/conquers|seizes|fallen/.test(m)) kind = m.startsWith(p.name) ? 'good' : 'bad';
+    else if (/Famine|Plague|Bandits/.test(m)) kind = 'bad';
+    else if (/grows|borders|ruins|peace/.test(m)) kind = 'good';
+    else if (/trade route|Plunder/.test(m)) kind = 'gold';
     ev.push({ kind, msg: m });
   }
+  for (const id of p.peaceOffers) ev.push({ kind: 'gold', msg: `${g.nation(id).name} offers peace — accept it for free in the Other nations panel.` });
   const gained = tilesNow - before.tiles;
   if (gained > 0 && !ev.some(e => /borders/.test(e.msg))) ev.push({ kind: 'good', msg: `Your territory grew by ${gained} tile${gained === 1 ? '' : 's'}.` });
   // Hostile neighbours warning
   for (const o of g.nations) {
     if (o === p || !o.alive) continue;
-    if (g.rel(p, o) < -40 && g.bordersNation(p, o)) ev.push({ kind: 'bad', msg: `${o.name} is hostile and shares your border (attack ${g.attackStrength(o)}).` });
+    if (g.atWar(p, o)) ev.push({ kind: 'bad', msg: `At war with ${o.name} (their attack ${g.attackStrength(o)}, yours ${g.attackStrength(p)}).` });
+    else if (g.rel(p, o) < -40 && g.bordersNation(p, o)) ev.push({ kind: 'bad', msg: `${o.name} is hostile and shares your border — they may declare war.` });
   }
   UI.report = ev;
 }
@@ -444,6 +461,7 @@ function refreshAll() {
   renderTilePanel();
   renderReport();
   renderNationPanel();
+  renderEdictPanel();
   renderDiploPanel();
   renderLog();
   UI.needsDraw = true;
@@ -462,15 +480,23 @@ function renderTopbar() {
     <div class="res-pill" title="Score: territory, settlements, population, castles, trade and gold."><span class="icon">🏛️</span><div><div class="lbl">Score</div><div class="num">${g.score(p)}</div></div></div>`;
   const ranked = g.nations.slice().sort((a, b) => g.score(b) - g.score(a));
   $('ranking').innerHTML = ranked.map((n, i) => `<div class="rank-row${n.isPlayer ? ' me' : ''}${n.alive ? '' : ' dead'}" title="${esc(n.name)} — ${esc(n.leader.name)}">
-    <span>${i + 1}</span><span class="swatch" style="background:${n.color}"></span><span>${esc(n.colorName)}${n.isPlayer ? ' · you' : ''}</span><span class="sc">${g.score(n)}</span></div>`).join('');
+    <span>${i + 1}</span><span class="swatch" style="background:${n.color}"></span><span>${esc(n.colorName)}${n.isPlayer ? ' · you' : (n.alive && g.atWar(p, n) ? ' <span class="war">⚔️ war</span>' : '')}</span><span class="sc">${g.score(n)}</span></div>`).join('');
 }
 
 function renderTurnPanel() {
   const g = UI.game, p = UI.player;
-  const title = $('turn-title'), sub = $('turn-sub');
+  const title = $('turn-title'), sub = $('turn-sub'), ap = $('ap-info'), wait = $('btn-wait');
+  const pips = '●'.repeat(p.ap) + '○'.repeat(Math.max(0, p.apMax - p.ap));
+  ap.innerHTML = `<span class="pips">${pips}</span> ${p.ap} of ${p.apMax} action${p.apMax === 1 ? '' : 's'}`;
   if (g.over && !g.continued) { title.textContent = 'Game over'; title.classList.add('done'); sub.textContent = g.reason; }
   else if (!p.alive) { title.textContent = 'Fallen'; title.classList.add('done'); sub.textContent = 'Your nation is no more.'; }
-  else { title.textContent = 'Your move'; title.classList.remove('done'); sub.textContent = 'Choose one action. Then every rival nation makes its move.'; }
+  else {
+    title.textContent = 'Your move'; title.classList.remove('done');
+    sub.textContent = p.apMax > 1
+      ? `You have ${p.apMax} actions this turn (1 + one per two cities). When they are spent, every rival moves.`
+      : 'Choose an action. Then every rival nation makes its move. More cities grant more actions per turn.';
+  }
+  wait.textContent = p.ap < p.apMax ? '⏳  End turn' : '⏳  End turn & save resources';
   renderQuickActions();
 }
 
@@ -501,6 +527,26 @@ function renderNationPanel() {
     </div>`;
 }
 
+function renderEdictPanel() {
+  const p = UI.player, g = UI.game;
+  let html = '<h3 class="engraved">Edicts</h3>';
+  if (p.edict) {
+    const E = EDICTS[p.edict];
+    html += `<div class="edict-now">${E.icon} <b>${E.name}</b> in force for ${Math.max(0, p.edictUntil - g.turn)} more turn${p.edictUntil - g.turn === 1 ? '' : 's'}: ${E.desc}</div>`;
+  } else html += '<div class="note">No edict in force. Proclaiming one takes an action and lasts 12 turns.</div>';
+  html += '<div class="edicts">';
+  for (const id in EDICTS) {
+    const E = EDICTS[id];
+    const c = g.checkAction(p, 'edict', null, id);
+    html += `<button class="action edict${p.edict === id ? ' gold' : ''}" data-edict="${id}" ${c.ok ? '' : 'disabled'} title="${esc(E.desc + (c.why ? ' ' + c.why : ''))}">
+      <span class="al">${E.icon} ${E.name}</span><span class="cost">${p.edict === id ? 'active' : costHtml(c.cost)}</span><span class="sub">${E.desc}</span></button>`;
+  }
+  html += '</div>';
+  const panel = $('edict-panel');
+  panel.innerHTML = html;
+  for (const b of panel.querySelectorAll('button[data-edict]')) b.onclick = () => playerAction('edict', null, b.dataset.edict);
+}
+
 function renderDiploPanel() {
   const p = UI.player, g = UI.game;
   let html = '<h3 class="engraved">Other nations</h3>';
@@ -509,29 +555,49 @@ function renderDiploPanel() {
     const T = NATION_TRAITS[n.trait], L = LEADER_TRAITS[n.leader.trait];
     const rel = g.rel(p, n), relL = g.relLabel(rel);
     const trading = p.trades.has(n.id);
-    const c = g.checkAction(p, 'trade', null, n.id);
+    const war = g.atWar(p, n), truce = g.truceActive(p, n);
     const borders = n.alive && g.bordersNation(p, n);
+    let status = war ? '<span class="war-tag">⚔️ At war</span>' : truce ? `<span class="truce-tag">🕊️ Truce until turn ${g.truces[g.warKey(p, n)]}</span>` : '<span class="status">At peace</span>';
+    if (p.peaceOffers.has(n.id)) status += ' · <b>they offer peace</b>';
+    let btns = '';
+    if (n.alive) {
+      const ct = g.checkAction(p, 'trade', null, n.id);
+      if (!trading && !war) btns += `<button class="small" data-act="trade" data-n="${n.id}" ${ct.ok ? '' : 'disabled'} title="${esc(ct.why || 'Open a trade route')}">🤝 Trade 🪙${ct.cost.gold}</button>`;
+      if (war) {
+        const cp = g.checkAction(p, 'peace', null, n.id);
+        const accept = p.peaceOffers.has(n.id);
+        btns += `<button class="small${accept ? ' gold' : ''}" data-act="peace" data-n="${n.id}" ${cp.ok ? '' : 'disabled'} title="${esc(cp.why || '')}">🕊️ ${accept ? 'Accept peace (free)' : `Offer peace 🪙${cp.cost.gold || 0}`}</button>`;
+      } else {
+        const cw = g.checkAction(p, 'declare_war', null, n.id);
+        btns += `<button class="small danger" data-act="declare_war" data-n="${n.id}" ${cw.ok ? '' : 'disabled'} title="${esc(cw.why || 'Declare war (takes an action)')}">⚔️ Declare war</button>`;
+      }
+    }
     html += `<div class="nation-row${n.alive ? '' : ' dead'}">
       <span class="swatch" style="background:${n.color}"></span>
       <div><div class="nm">${esc(n.name)} <span class="note">· ${n.colorName}</span></div>
-        <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}</div>
+        <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}${n.edict ? ` · ${EDICTS[n.edict].icon} ${EDICTS[n.edict].name}` : ''}</div>
         <div class="sub">${n.alive ? `${n.owned.size} tiles · ${n.settlements.length} settlements · attack ${g.attackStrength(n)} · score ${g.score(n)}` : 'This nation has fallen.'}</div>
-        <div class="sub"><span class="rel-${relL}">${relL}</span> (${Math.round(rel)})${borders ? ' · shares your border' : ''}${trading ? ` · 🤝 trading, +${g.tradeIncome(p, n)} gold/turn` : ''}</div>
+        <div class="sub">${status} · <span class="rel-${relL}">${relL}</span> (${Math.round(rel)})${borders ? ' · shares your border' : ''}${trading ? ` · 🤝 trading, +${g.tradeIncome(p, n)} gold/turn` : ''}</div>
         <div class="sub">Last move: ${esc(n.lastAction)}</div>
+        <div class="btns">${btns}</div>
       </div>
-      <div>${n.alive && !trading ? `<button class="small" data-trade="${n.id}" ${c.ok ? '' : 'disabled'} title="${esc(c.why || 'Open a trade route: ' + g.costStr(c.cost))}">🤝 Trade<br>🪙${c.cost.gold}</button>` : ''}</div>
     </div>`;
   }
   const panel = $('diplo-panel');
   panel.innerHTML = html;
-  for (const b of panel.querySelectorAll('button[data-trade]')) b.onclick = () => playerAction('trade', null, parseInt(b.dataset.trade, 10));
+  for (const b of panel.querySelectorAll('button[data-act]')) b.onclick = () => {
+    const id = b.dataset.act, target = parseInt(b.dataset.n, 10);
+    if (id === 'declare_war' && !confirm(`Declare war on ${g.nation(target).name}? Trade with them ends and relations sour.`)) return;
+    playerAction(id, null, target);
+  };
 }
 
 function renderLog() {
   const g = UI.game, p = UI.player;
   $('log').innerHTML = g.log.slice(-80).map(e => {
-    const war = /conquer|seizes|fallen|Famine/.test(e.msg);
-    return `<div class="entry${e.nation === p.id ? ' mine' : ''}${war ? ' war' : ''}"><span class="t">T${e.turn}</span>${esc(e.msg)}</div>`;
+    const war = /conquer|seizes|fallen|Famine|declares war/.test(e.msg);
+    const event = /^Event:/.test(e.msg);
+    return `<div class="entry${e.nation === p.id ? ' mine' : ''}${war ? ' war' : ''}${event ? ' event' : ''}"><span class="t">T${e.turn}</span>${esc(e.msg)}</div>`;
   }).join('');
 }
 

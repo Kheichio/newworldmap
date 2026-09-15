@@ -94,6 +94,18 @@ const SETTLEMENTS = {
   city:    { name: 'City',    gold: 6, mat: 8, upkeep: 4, maxPop: 30, defense: 7, score: 25, influence: 4, next: null },
 };
 
+// Edicts: one active national policy at a time, lasting EDICT_TURNS turns.
+const EDICT_TURNS = 12;
+const EDICTS = {
+  harvest: { name: 'Harvest Festival', icon: '🌾', desc: '+20% food. Your people grow faster.' },
+  levy:    { name: 'Great Levy',       icon: '⚔️', desc: '+3 attack and +2 defence, but −20% gold while the levy is raised.' },
+  fairs:   { name: 'Market Fairs',     icon: '🎪', desc: 'Each trade route yields +3 gold. Relations with trade partners warm faster.' },
+  corvee:  { name: 'Corvée Labour',    icon: '🔨', desc: 'Improvements, roads, castles and villages cost 25% less, but −10% food.' },
+};
+
+// Random events (chance per nation per turn is EVENT_CHANCE).
+const EVENT_CHANCE = 0.1;
+
 const COSTS = {
   village: { mat: 60, gold: 15 },
   castle:  { mat: 150, gold: 40 },
@@ -101,7 +113,10 @@ const COSTS = {
   road:    { mat: 8 },
   trade:   { gold: 30 },
   conquer: { gold: 40, mat: 20 },
+  edict:   { gold: 25 },
+  peace:   { gold: 20 },
 };
+const TRUCE_TURNS = 10;   // no new war for this long after peace
 
 const NATION_COLORS = [
   { id: 'crimson', name: 'Crimson', hex: '#c0392b', trait: 'martial' },
