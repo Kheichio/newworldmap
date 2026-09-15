@@ -1,6 +1,6 @@
 // Static game data: terrain, resources, nations, traits, costs, name generators.
 
-const GAME_VERSION = '0.0.5';
+const GAME_VERSION = '0.0.6';
 
 const TERRAINS = {
   ocean:     { name: 'Ocean',     color: '#1d4e79', water: true, food: 0, mat: 0, gold: 0 },
@@ -108,27 +108,42 @@ const EDICTS = {
 // Random events (chance per nation per turn is EVENT_CHANCE).
 const EVENT_CHANCE = 0.1;
 
-// Fortune cards: every nation draws HAND_SIZE each turn and may play one (free — it costs no action).
-// `now` cards take effect immediately; `mod` cards change costs/strength for the rest of the turn.
-// Draw weight is 1, +1.5 for a matching national trait, +1.5 for a matching leader trait.
-const HAND_SIZE = 3;
+// Cards drive every action. A nation holds up to HAND_MAX cards, refilled at the start of each turn.
+// Action cards (with `action`) spend an action point and follow the normal rules and costs of that action;
+// bonus cards (no `action`) take effect immediately and are free. Discarding is always free.
+// Draw weight: base `weight`, +1.5 for a matching national trait, +1.5 for a matching leader trait,
+// scaled down heavily when the card has no valid use right now.
+const HAND_MAX = 6;
 const CARDS = {
-  homesteaders: { name: 'Homesteaders',   icon: '🏡', kind: 'mod', mod: { village: 0.5 },            desc: 'Founding a village costs half this turn.',             nation: ['wanderers', 'builders'], leader: ['ambitious'] },
-  masons:       { name: 'Master Masons',  icon: '🧱', kind: 'mod', mod: { improve: 0.5, road: 0.5 }, desc: 'Improvements and roads cost half this turn.',          nation: ['builders'],              leader: ['industrious'] },
-  muster:       { name: 'Call to Arms',   icon: '🛡️', kind: 'mod', mod: { attack: 4 },               desc: '+4 attack strength this turn.',                        nation: ['martial'],               leader: ['warlike', 'reckless'] },
-  charts:       { name: 'Sea Charts',     icon: '🧭', kind: 'mod', mod: { harbor: 0.5, fishery: 0.5 }, desc: 'Harbours and fisheries cost half this turn.',        nation: ['maritime'],              leader: [] },
-  surveyors:    { name: 'Surveyors',      icon: '📜', kind: 'mod', mod: { expand: 0 },               desc: 'Expanding your border is free this turn.',             nation: ['wanderers'],             leader: ['ambitious'] },
-  scholars:     { name: 'Scholars',       icon: '📚', kind: 'mod', mod: { upgrade: 0.5 },            desc: 'Upgrading a settlement costs half this turn.',         nation: ['scholarly'],             leader: ['wise'] },
-  fortify:      { name: 'Fortify',        icon: '🏰', kind: 'mod', mod: { castle: 0.5 },             desc: 'Castles cost half this turn.',                         nation: ['martial'],               leader: ['pious', 'stalwart'] },
-  caravan:      { name: 'Caravan',        icon: '🐪', kind: 'now', desc: 'Gain 15 gold, plus 2 per settlement.',                                                  nation: ['mercantile'],            leader: ['frugal', 'cunning'] },
-  taxes:        { name: 'Tax Collectors', icon: '🪙', kind: 'now', desc: 'Gain 3 gold per settlement.',                                                            nation: ['mercantile', 'scholarly'], leader: ['frugal'] },
-  prospectors:  { name: 'Prospectors',    icon: '⛏️', kind: 'now', desc: 'Gain 20 materials, plus 2 per settlement.',                                             nation: ['miners'],                leader: ['industrious'] },
-  bumper:       { name: 'Bumper Crop',    icon: '🌾', kind: 'now', desc: '+15 growth.',                                                                            nation: ['agrarian'],              leader: ['bountiful', 'beloved'] },
-  migrants:     { name: 'Migrants',       icon: '👥', kind: 'now', desc: '+1 population in your smallest settlement with room.',                                  nation: ['agrarian'],              leader: ['beloved', 'charismatic'] },
-  envoys:       { name: 'Envoys',         icon: '🕊️', kind: 'now', desc: '+6 relations with every nation.',                                                      nation: ['mercantile', 'scholarly'], leader: ['charismatic', 'cunning'] },
-  festival:     { name: 'Festival',       icon: '🎉', kind: 'now', desc: 'Your edict lasts 4 more turns (+8 growth if none is in force).',                        nation: [],                        leader: ['pious', 'beloved'] },
-  rally:        { name: 'Rally',          icon: '⚡', kind: 'now', desc: '+1 action this turn.', weight: 0.4,                                                     nation: [],                        leader: ['ambitious', 'beloved'] },
+  // --- action cards ---
+  expand:  { name: 'Expansion',      icon: '🧭', action: 'expand',      target: 'tile',   weight: 2.4, desc: 'Claim a free tile bordering your land.',                          nation: ['wanderers'],              leader: ['ambitious'] },
+  settle:  { name: 'Settlers',       icon: '🏘️', action: 'village',     target: 'tile',   weight: 1.3, desc: 'Found a village on your land or on free land at your border.',    nation: ['wanderers', 'builders'],  leader: ['ambitious', 'beloved'] },
+  charter: { name: 'Charter',        icon: '📜', action: 'upgrade',     target: 'tile',   weight: 1.1, desc: 'Raise a village to a town, or a town to a city.',                 nation: ['scholarly'],              leader: ['wise'] },
+  farm:    { name: 'Farmers',        icon: '🌾', action: 'farm',        target: 'tile',   weight: 1.4, desc: 'Build a farm.',                                                   nation: ['agrarian'],               leader: ['bountiful'] },
+  mine:    { name: 'Miners',         icon: '⛏️', action: 'mine',        target: 'tile',   weight: 1.1, desc: 'Dig a mine.',                                                     nation: ['miners'],                 leader: ['industrious'] },
+  lumber:  { name: 'Woodcutters',    icon: '🪓', action: 'lumber',      target: 'tile',   weight: 1.1, desc: 'Set up a lumber camp.',                                           nation: ['builders'],               leader: ['industrious'] },
+  pasture: { name: 'Herders',        icon: '🐄', action: 'pasture',     target: 'tile',   weight: 1.0, desc: 'Fence a pasture around animals.',                                 nation: ['agrarian', 'wanderers'],  leader: ['bountiful'] },
+  fishery: { name: 'Fishers',        icon: '⚓', action: 'fishery',     target: 'tile',   weight: 1.0, desc: 'Build a fishery on coast or lake.',                               nation: ['maritime'],               leader: [] },
+  road:    { name: 'Road Builders',  icon: '🛤️', action: 'road',        target: 'tile',   weight: 1.2, desc: 'Lay a road.',                                                     nation: ['builders', 'mercantile'], leader: ['industrious'] },
+  castle:  { name: 'Master Builder', icon: '🏰', action: 'castle',      target: 'tile',   weight: 0.7, desc: 'Raise a castle.',                                                 nation: ['martial', 'builders'],    leader: ['pious', 'stalwart'] },
+  harbor:  { name: 'Shipwrights',    icon: '⛵', action: 'harbor',      target: 'tile',   weight: 0.7, desc: 'Build a harbour at a coastal settlement.',                        nation: ['maritime'],               leader: [] },
+  trade:   { name: 'Merchants',      icon: '🤝', action: 'trade',       target: 'nation', weight: 0.9, desc: 'Open a trade route with another nation.',                         nation: ['mercantile'],             leader: ['cunning', 'frugal'] },
+  war:     { name: 'Casus Belli',    icon: '⚔️', action: 'declare_war', target: 'nation', weight: 0.9, desc: 'Declare war on a nation you can reach.',                          nation: ['martial'],                leader: ['warlike', 'reckless'] },
+  march:   { name: 'March',          icon: '🗡️', action: 'conquer',     target: 'tile',   weight: 1.0, desc: 'Seize a border tile from a nation you are at war with.',           nation: ['martial'],                leader: ['warlike', 'reckless'] },
+  treaty:  { name: 'Treaty',         icon: '🕊️', action: 'peace',       target: 'nation', weight: 0.6, desc: 'Offer peace to a nation you are at war with.',                    nation: ['scholarly', 'mercantile'], leader: ['charismatic'] },
+  edict:   { name: 'Proclamation',   icon: '📯', action: 'edict',       target: 'edict',  weight: 0.6, desc: 'Proclaim an edict: a national policy for 12 turns.',              nation: [],                         leader: ['pious', 'wise'] },
+  // --- bonus cards (instant, free) ---
+  caravan:     { name: 'Caravan',        icon: '🐪', weight: 0.6, desc: 'Gain 15 gold, plus 2 per settlement.',                           nation: ['mercantile'],              leader: ['frugal', 'cunning'] },
+  taxes:       { name: 'Tax Collectors', icon: '🪙', weight: 0.5, desc: 'Gain 3 gold per settlement.',                                     nation: ['mercantile', 'scholarly'], leader: ['frugal'] },
+  prospectors: { name: 'Prospectors',    icon: '🪨', weight: 0.6, desc: 'Gain 20 materials, plus 2 per settlement.',                      nation: ['miners'],                  leader: ['industrious'] },
+  bumper:      { name: 'Bumper Crop',    icon: '🍎', weight: 0.6, desc: '+15 growth.',                                                     nation: ['agrarian'],                leader: ['bountiful', 'beloved'] },
+  migrants:    { name: 'Migrants',       icon: '👥', weight: 0.5, desc: '+1 population in your smallest settlement with room.',           nation: ['agrarian'],                leader: ['beloved', 'charismatic'] },
+  envoys:      { name: 'Envoys',         icon: '🎎', weight: 0.3, desc: '+6 relations with every nation.',                                nation: ['mercantile', 'scholarly'], leader: ['charismatic', 'cunning'] },
+  festival:    { name: 'Festival',       icon: '🎉', weight: 0.4, desc: 'Your edict lasts 4 more turns (+8 growth if none is in force).', nation: [],                          leader: ['pious', 'beloved'] },
+  rally:       { name: 'Rally',          icon: '⚡', weight: 0.35, desc: '+1 action this turn.',                                           nation: [],                          leader: ['ambitious', 'beloved'] },
 };
+const CARD_FOR_ACTION = {};
+for (const id in CARDS) if (CARDS[id].action) CARD_FOR_ACTION[CARDS[id].action] = id;
 
 const COSTS = {
   village: { mat: 60, gold: 15 },

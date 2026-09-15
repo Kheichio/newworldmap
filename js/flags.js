@@ -10,7 +10,7 @@ function makeFlag(nation) {
   const c = document.createElement('canvas');
   c.width = FLAG_W; c.height = FLAG_H;
   const g = c.getContext('2d');
-  const rng = new RNG(nation.name + '|' + nation.colorId + '|flag');
+  const rng = new RNG(nation.name + '|' + nation.colorId + '|flag|' + (nation.flagSeed || 0));
   const field = nation.color;
   const dark = isLight(field);
   // secondary colour must contrast with the field

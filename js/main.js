@@ -3,7 +3,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initSetup();
   initPanels();
 
-  $('btn-wait').onclick = () => playerAction('wait');
+  $('btn-end').onclick = endTurn;
   $('btn-center').onclick = centerOnHome;
   $('btn-grid').onclick = () => { UI.renderer.showGrid = !UI.renderer.showGrid; UI.needsDraw = true; };
   $('btn-legend').onclick = () => $('legend').classList.toggle('hidden');

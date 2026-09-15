@@ -11,17 +11,22 @@
 </head>
 <body>
   <div id="app" class="hidden">
-    <!-- ======= Top bar: title, turn, resources ======= -->
+    <!-- ======= Top bar ======= -->
     <header id="topbar" class="plate">
       <div class="brand">
         <span class="laurel">❦</span>
         <span class="brand-name">New World Map</span>
         <span class="version" id="version-tag"></span>
       </div>
-      <div id="turn-badge" class="turn-badge">
+      <div class="turn-badge">
         <div class="tb-label">Turn</div>
         <div class="tb-value" id="turn-info">1</div>
       </div>
+      <div class="turn-badge">
+        <div class="tb-label">Actions</div>
+        <div class="tb-value" id="ap-info"></div>
+      </div>
+      <button id="btn-end" class="btn gold" title="End your turn (Space)">End turn ▸</button>
       <div id="resbar" class="resbar"></div>
       <div class="spacer"></div>
       <div class="toolbar">
@@ -46,18 +51,6 @@
           <summary id="standings-sum">Standings</summary>
           <div id="ranking" class="ranking"></div>
         </details>
-        <div id="drawer" class="drawer plate">
-          <div class="drawer-bar">
-            <button class="drawer-tab active" data-tab="report">Since your last move</button>
-            <button class="drawer-tab" data-tab="log">Chronicle</button>
-            <span id="drawer-summary" class="drawer-summary"></span>
-            <button id="drawer-toggle" class="drawer-toggle" title="Show / hide">▾</button>
-          </div>
-          <div id="drawer-body" class="drawer-body">
-            <div id="report" class="report"></div>
-            <div id="log" class="hidden"></div>
-          </div>
-        </div>
         <div id="legend" class="legend plate hidden">
           <div class="legend-title">Legend</div>
           <div class="legend-grid" id="legend-grid">
@@ -76,42 +69,51 @@
             <span class="lg-sym"><i class="sym road"></i></span><span>Road</span>
             <span class="lg-sym"><i class="sym river"></i></span><span>River</span>
             <span class="lg-sym"><i class="sym border"></i></span><span>Border (nation colour)</span>
-            <span class="lg-sym"><i class="sym unworked"></i></span><span>Your unworked land (hatched)</span>
+            <span class="lg-sym"><i class="sym unworked"></i></span><span>Your idle land (hatched)</span>
           </div>
         </div>
+
+        <!-- Card tray -->
+        <div id="tray" class="tray">
+          <div class="tray-head">
+            <span class="tray-title">Your hand</span>
+            <span id="tray-note" class="tray-note"></span>
+          </div>
+          <div id="hand" class="hand"></div>
+        </div>
+
+        <!-- Target picker (nations / edicts) -->
+        <div id="picker" class="picker plate hidden">
+          <div class="picker-head"><span id="picker-title"></span><button id="picker-close" class="tool">✕ Keep card</button></div>
+          <div id="picker-body" class="picker-body"></div>
+        </div>
+
         <div id="tooltip" class="hidden"></div>
         <div id="toast" class="hidden"></div>
       </div>
 
       <!-- ======= Sidebar ======= -->
       <aside id="sidebar">
-        <section id="turn-panel" class="plate panel">
-          <div class="turn-head">
-            <div class="turn-title" id="turn-title">Your move</div>
-            <div class="ap" id="ap-info"></div>
-          </div>
-          <div class="turn-sub" id="turn-sub">Choose an action. When your actions are spent, every rival nation moves.</div>
-          <div class="hand-head"><span class="group-title">Fortune cards</span><span id="hand-note" class="note"></span></div>
-          <div id="hand" class="hand"></div>
-          <div class="quick-grid" id="quick-actions"></div>
-          <button id="btn-wait" class="btn wide" title="End your turn now and keep your resources (Space)">⏳ &nbsp;End turn &amp; save resources</button>
-        </section>
-
         <section id="tile-panel" class="plate panel"></section>
+
+        <details id="report-panel" class="plate panel acc" data-acc="report" open>
+          <summary><span class="acc-title">Since your last move</span><span id="report-sum" class="acc-sum"></span></summary>
+          <div id="report" class="report acc-body"></div>
+        </details>
 
         <details id="nation-panel" class="plate panel acc" data-acc="nation">
           <summary><span class="acc-title">Your nation</span><span id="nation-sum" class="acc-sum"></span></summary>
           <div id="nation-body" class="acc-body"></div>
         </details>
 
-        <details id="diplo-panel" class="plate panel acc" data-acc="diplo" open>
+        <details id="diplo-panel" class="plate panel acc" data-acc="diplo">
           <summary><span class="acc-title">Other nations</span><span id="diplo-sum" class="acc-sum"></span></summary>
           <div id="diplo-body" class="acc-body"></div>
         </details>
 
-        <details id="edict-panel" class="plate panel acc" data-acc="edict">
-          <summary><span class="acc-title">Edicts</span><span id="edict-sum" class="acc-sum"></span></summary>
-          <div id="edict-body" class="acc-body"></div>
+        <details id="log-panel" class="plate panel acc" data-acc="log">
+          <summary><span class="acc-title">Chronicle</span><span id="log-sum" class="acc-sum"></span></summary>
+          <div id="log" class="acc-body"></div>
         </details>
       </aside>
     </div>
@@ -146,7 +148,10 @@
         <label>Seed <input id="in-seed" placeholder="blank = random"></label>
       </div>
       <div class="preview-row">
-        <div id="flag-preview" class="flag-preview" title="Your flag is drawn from your nation's name, colour and trait"></div>
+        <div class="flag-preview" title="Your flag is drawn from your nation's name, colour and trait">
+          <div id="flag-preview"></div>
+          <button id="btn-reflag-setup" class="btn small">↻ New flag</button>
+        </div>
         <div id="trait-preview" class="inset"></div>
       </div>
       <div class="row right"><button id="btn-start" class="btn gold big">Found your nation</button></div>
@@ -158,21 +163,19 @@
     <div class="modal-box plate">
       <h2 class="engraved">How to play</h2>
       <ul class="help">
-        <li><b>Actions.</b> You get 1 action per turn, plus 1 for every two cities (up to 3). Use the quick actions (they highlight every valid tile) or click any tile and choose from its panel. Press <kbd>Space</kbd> to end your turn early. When your actions are spent, every rival moves.</li>
-        <li><b>Land only produces when worked</b> — within 2 tiles of one of your settlements. Hatched tiles are yours but idle: found a village nearby to put them to work.</li>
-        <li><b>Food</b> feeds your people; the surplus fills the growth bar and adds citizens. Villages become towns (4 people) and cities (9). A shortfall causes famine.</li>
-        <li><b>Materials</b> build improvements, roads, settlements and castles. <b>Gold</b> pays for expansion, trade, war, edicts and upkeep. Costs rise as your nation grows.</li>
-        <li><b>Resources</b> give a taste of their yield; the matching improvement (pasture, mine, lumber camp, farm, fishery) unlocks the full yield. <b>Ruins</b> 🏺 reward whoever claims them.</li>
-        <li><b>Borders grow by themselves</b> around settlements every turn. <b>Expand</b> grabs a specific tile now. Villages can be founded on free land touching your border.</li>
-        <li><b>Settlement limit.</b> Your capital supports 3 settlements; each town adds 1 and each city adds 2. Grow and upgrade before you spread.</li>
-        <li><b>Fortune cards.</b> Every turn you draw 3 cards and may play one for free. Some pay out at once (gold, materials, growth); others discount a kind of action for the rest of the turn. Your nation's colour and your leader's trait make related cards more likely.</li>
-        <li><b>Roads</b> linking a settlement to your capital earn gold. <b>Harbours</b> earn gold and food and allow trade (and war) across the sea.</li>
-        <li><b>Trade routes</b> pay both nations every turn and warm relations. Shared borders without trade, land hunger and warlike leaders cool them.</li>
-        <li><b>War must be declared</b> (Other nations panel) before anyone can conquer. Conquering a settlement plunders it. <b>Offer peace</b> when you have had enough — the weaker or wearier side usually accepts, and a 10-turn truce follows. <b>Castles</b> defend everything within 2 tiles and raise your attack.</li>
-        <li><b>Edicts</b> are national policies lasting 12 turns: Harvest Festival, Great Levy, Market Fairs or Corvée Labour.</li>
-        <li><b>Events</b> — harvests, plagues, migrants, bandits, storms — strike every nation now and then. Castles keep bandits away.</li>
+        <li><b>Everything is a card.</b> Your hand (bottom of the map) holds up to 6 cards and refills at the start of each turn. Click a card, then <b>Play</b>, <b>Keep</b> it for later, or <b>Discard</b> it (free) to draw something else next turn.</li>
+        <li><b>Action cards</b> — Expansion, Settlers, Charter, Farmers, Miners, Woodcutters, Herders, Fishers, Road Builders, Master Builder, Shipwrights, Merchants, Casus Belli, March, Treaty, Proclamation — spend an action point and follow the usual costs. Playing one highlights every valid tile (or opens a chooser for nations and edicts).</li>
+        <li><b>Bonus cards</b> (Caravan, Tax Collectors, Prospectors, Bumper Crop, Migrants, Envoys, Festival, Rally) take effect at once and are free.</li>
+        <li><b>Actions per turn:</b> 1, plus 1 for every two cities (up to 3). Press <kbd>Space</kbd> or <b>End turn</b> when you are done; then every rival moves.</li>
+        <li><b>The deck knows your nation.</b> Cards tied to your colour's trait and your leader's trait are drawn more often (they glow gold). Cards with nothing to do right now are rare — but keeping a card you cannot use blocks a fresh draw, so discard freely.</li>
+        <li><b>Land only produces when worked</b> — within 2 tiles of a settlement. Hatched tiles are yours but idle: play Settlers nearby.</li>
+        <li><b>Settlement limit:</b> your capital supports 3 settlements; each town adds 1 and each city adds 2. Grow and upgrade (Charter) before you spread.</li>
+        <li><b>Food</b> feeds your people; the surplus fills the growth bar and adds citizens. Villages become towns (4 people) and cities (9). Shortfalls cause famine. <b>Materials</b> build; <b>gold</b> pays for expansion, trade, war, edicts and upkeep.</li>
+        <li><b>Resources</b> give a taste of their yield; the matching improvement unlocks it fully. <b>Ruins</b> reward whoever claims them.</li>
+        <li><b>War must be declared</b> (Casus Belli) before anyone can March on enemy tiles. Conquered settlements are plundered. Offer peace with a Treaty; accepting an offer made to you is free. Castles defend everything within 2 tiles.</li>
+        <li><b>Edicts</b> (Proclamation) are 12-turn policies. <b>Events</b> strike every nation now and then.</li>
         <li><b>Win</b> by holding half of all claimed land, being the last nation standing, or having the highest score at the turn limit.</li>
-        <li>Drag / <kbd>WASD</kbd> / arrows to pan · scroll to zoom · <kbd>C</kbd> capital · <kbd>L</kbd> legend · <kbd>G</kbd> grid · <kbd>Esc</kbd> cancel.</li>
+        <li>Drag / <kbd>WASD</kbd> / arrows to pan · scroll to zoom · <kbd>C</kbd> capital · <kbd>L</kbd> legend · <kbd>G</kbd> grid · <kbd>M</kbd> mute · <kbd>Esc</kbd> cancel.</li>
       </ul>
       <div class="row right"><button id="btn-help-close" class="btn gold">Close</button></div>
     </div>

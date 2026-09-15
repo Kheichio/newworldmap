@@ -80,7 +80,7 @@ class Game {
       relics: 0,                       // score from explored ruins
       peaceOffers: new Set(),          // nations offering peace to this one
       lostTiles: 0,                    // tiles lost in current wars (for AI peace decisions)
-      hand: [], cardPlayed: null, mods: {}, // fortune cards for this turn
+      hand: [], flagSeed: 0,
     };
   }
 
@@ -93,8 +93,7 @@ class Game {
   }
   resetActions(n) {
     n.apMax = this.actionsPerTurn(n); n.ap = n.apMax;
-    n.mods = {}; n.cardPlayed = null;
-    n.hand = this.drawCards(n, HAND_SIZE);
+    n.newCards = this.refillHand(n);
   }
 
   // ---------- Settlement cap ----------
@@ -106,60 +105,116 @@ class Game {
     return cap;
   }
 
-  // ---------- Fortune cards ----------
-  drawCards(n, count) {
+  // ---------- Cards ----------
+  // How useful a card is right now (0..1). Cards with nothing to do are drawn far less often.
+  cardUsefulness(n, id, ctx) {
+    const c = CARDS[id];
+    if (!c.action) return 1;
+    switch (c.action) {
+      case 'expand': return ctx.frontier > 0 ? 1 : 0;
+      case 'village': return n.settlements.length < this.settlementCap(n) ? 1 : 0.1;
+      case 'upgrade': return ctx.upgradable ? 1 : 0.1;
+      case 'farm': case 'mine': case 'lumber': case 'pasture': case 'fishery': return ctx.improvable[c.action] ? 1 : 0.05;
+      case 'road': return n.settlements.length >= 2 ? 1 : 0.1;
+      case 'castle': return n.owned.size > 14 && n.castles.length < 1 + Math.floor(n.owned.size / 30) ? 1 : 0.1;
+      case 'harbor': return ctx.harborable ? 1 : 0.05;
+      case 'trade': return ctx.tradeable ? 1 : 0.1;
+      case 'declare_war': return ctx.warTargets ? (this.isAggressive(n) ? 1.5 : 0.8) : 0.05;
+      case 'conquer': return ctx.atWar ? 1.2 : 0.05;
+      case 'peace': return ctx.atWar ? 1 : 0.05;
+      case 'edict': return n.edict ? 0.4 : 1;
+    }
+    return 1;
+  }
+  cardContext(n) {
+    const worked = this.workedTiles(n);
+    const improvable = {};
+    for (const i of worked) {
+      const t = this.tiles[i];
+      if (t.settlement || t.castle) continue;
+      for (const id in IMPROVEMENTS) if (!improvable[id] && t.improvement !== id && this.improvementAllowed(t, id)) improvable[id] = true;
+    }
+    return {
+      frontier: this.frontierSize(n),
+      upgradable: n.settlements.some(i => { const s = this.tiles[i].settlement; const S = SETTLEMENTS[s.type]; return S.next && s.pop >= S.upgradePop; }),
+      improvable,
+      harborable: n.settlements.some(i => this.tiles[i].coastal && !this.tiles[i].harbor),
+      tradeable: this.nations.some(o => o !== n && o.alive && !n.trades.has(o.id) && this.rel(n, o) >= -10 && this.canReach(n, o)),
+      warTargets: this.nations.some(o => o !== n && o.alive && !this.atWar(n, o) && !this.truceActive(n, o)
+        && (this.rel(n, o) < -10 || (this.isAggressive(n) && this.rel(n, o) < 45))
+        && (this.bordersNation(n, o) || (this.hasHarbor(n) && this.hasHarbor(o)))),
+      atWar: this.enemies(n).length > 0,
+    };
+  }
+  cardWeight(n, id, ctx) {
+    const c = CARDS[id];
+    let w = c.weight || 1;
+    if (c.nation.includes(n.trait)) w += 1.5;
+    if (c.leader.includes(n.leader.trait)) w += 1.5;
+    return w * this.cardUsefulness(n, id, ctx);
+  }
+  drawCard(n, ctx = this.cardContext(n)) {
     const ids = Object.keys(CARDS);
     const weights = ids.map(id => {
-      const c = CARDS[id];
-      let w = c.weight || 1;
-      if (c.nation.includes(n.trait)) w += 1.5;
-      if (c.leader.includes(n.leader.trait)) w += 1.5;
-      return w;
+      const w = this.cardWeight(n, id, ctx);
+      const copies = n.hand.filter(x => x === id).length; // duplicates get rarer
+      return w / (1 + copies * 1.5);
     });
-    const hand = [];
-    for (let k = 0; k < count && ids.length; k++) {
-      let total = 0; for (let i = 0; i < ids.length; i++) if (!hand.includes(ids[i])) total += weights[i];
-      let r = this.rng.float() * total;
-      for (let i = 0; i < ids.length; i++) {
-        if (hand.includes(ids[i])) continue;
-        r -= weights[i];
-        if (r <= 0) { hand.push(ids[i]); break; }
-      }
-    }
-    return hand;
+    let total = 0; for (const w of weights) total += w;
+    let r = this.rng.float() * total;
+    for (let i = 0; i < ids.length; i++) { r -= weights[i]; if (r <= 0) return ids[i]; }
+    return ids[ids.length - 1];
+  }
+  refillHand(n) {
+    const ctx = this.cardContext(n);
+    const drawn = [];
+    while (n.hand.length < HAND_MAX) { const id = this.drawCard(n, ctx); n.hand.push(id); drawn.push(id); }
+    return drawn;
+  }
+  discardCard(n, idx) {
+    if (idx < 0 || idx >= n.hand.length) return { ok: false, why: 'No such card.' };
+    const [id] = n.hand.splice(idx, 1);
+    return { ok: true, id };
   }
 
-  // Play a card from the hand. Free: costs no action point. One card per turn.
-  playCard(n, id) {
-    if (n.cardPlayed) return { ok: false, why: 'You have already played a card this turn.' };
-    if (!n.hand.includes(id)) return { ok: false, why: 'That card is not in your hand.' };
+  // Play the card at hand index `idx`. Action cards run the underlying action (rules, costs and an
+  // action point apply); bonus cards are instant and free. The card leaves the hand only on success.
+  playCard(n, idx, tile, target) {
     if (this.over && !this.continued) return { ok: false, why: 'The game is over.' };
+    const id = n.hand[idx];
+    if (!id) return { ok: false, why: 'No such card.' };
     const c = CARDS[id];
-    let msg = `plays ${c.name}`;
-    if (c.kind === 'mod') { Object.assign(n.mods, c.mod); msg += `: ${c.desc.toLowerCase()}`; }
-    else {
-      const setts = n.settlements.length;
-      switch (id) {
-        case 'caravan': { const g = 15 + 2 * setts; n.gold += g; msg += ` and gains ${g} gold.`; break; }
-        case 'taxes': { const g = 3 * setts; n.gold += g; msg += ` and gains ${g} gold.`; break; }
-        case 'prospectors': { const m = 20 + 2 * setts; n.mat += m; msg += ` and gains ${m} materials.`; break; }
-        case 'bumper': n.growth += 15; msg += ': +15 growth.'; break;
-        case 'migrants': {
-          const room = n.settlements.map(i => this.tiles[i].settlement).filter(s => s.pop < SETTLEMENTS[s.type].maxPop).sort((a, b) => a.pop - b.pop);
-          if (room.length) { room[0].pop++; msg += `: ${room[0].name} grows to ${room[0].pop}.`; } else { n.growth += 10; msg += ': +10 growth.'; }
-          break;
-        }
-        case 'envoys': for (const o of this.nations) if (o !== n && o.alive) this.shiftRel(n, o, 6); msg += ': relations improve everywhere.'; break;
-        case 'festival': if (n.edict) { n.edictUntil += 4; msg += `: the ${EDICTS[n.edict].name} continues 4 more turns.`; } else { n.growth += 8; msg += ': +8 growth.'; } break;
-        case 'rally': n.ap++; n.apMax = Math.max(n.apMax, n.ap); msg += ': an extra action this turn!'; break;
-      }
+    if (c.action) {
+      if (n.ap <= 0) return { ok: false, why: 'No actions left this turn.' };
+      const r = this.doAction(n, c.action, tile, target);
+      if (!r.ok) return r;
+      n.hand.splice(idx, 1);
+      this.actionCounts['card:' + id] = (this.actionCounts['card:' + id] || 0) + 1;
+      return r;
     }
-    n.cardPlayed = id;
-    n.hand = n.hand.filter(x => x !== id);
+    let msg = `plays ${c.name}`;
+    const setts = n.settlements.length;
+    switch (id) {
+      case 'caravan': { const g = 15 + 2 * setts; n.gold += g; msg += ` and gains ${g} gold.`; break; }
+      case 'taxes': { const g = 3 * setts; n.gold += g; msg += ` and gains ${g} gold.`; break; }
+      case 'prospectors': { const m = 20 + 2 * setts; n.mat += m; msg += ` and gains ${m} materials.`; break; }
+      case 'bumper': n.growth += 15; msg += ': +15 growth.'; break;
+      case 'migrants': {
+        const room = n.settlements.map(i => this.tiles[i].settlement).filter(s => s.pop < SETTLEMENTS[s.type].maxPop).sort((a, b) => a.pop - b.pop);
+        if (room.length) { room[0].pop++; msg += `: ${room[0].name} grows to ${room[0].pop}.`; } else { n.growth += 10; msg += ': +10 growth.'; }
+        break;
+      }
+      case 'envoys': for (const o of this.nations) if (o !== n && o.alive && this.rel(n, o) < 50) this.shiftRel(n, o, 6); msg += ': relations improve everywhere.'; break;
+      case 'festival': if (n.edict) { n.edictUntil += 4; msg += `: the ${EDICTS[n.edict].name} continues 4 more turns.`; } else { n.growth += 8; msg += ': +8 growth.'; } break;
+      case 'rally': n.ap++; n.apMax = Math.max(n.apMax, n.ap); msg += ': an extra action this turn!'; break;
+    }
+    n.hand.splice(idx, 1);
     this.actionCounts['card:' + id] = (this.actionCounts['card:' + id] || 0) + 1;
     this.addLog(`${n.name} ${msg}`, n);
     return { ok: true, msg };
   }
+  hasCardFor(n, action) { return n.hand.includes(CARD_FOR_ACTION[action]); }
+  handIndexFor(n, action) { return n.hand.indexOf(CARD_FOR_ACTION[action]); }
 
   // ---------- War & peace ----------
   warKey(a, b) { return a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`; }
@@ -373,7 +428,6 @@ class Game {
     if (n.trait === 'martial') a += 2;
     if (n.leader.trait === 'warlike') a += 2;
     if (n.edict === 'levy') a += 3;
-    if (n.mods && n.mods.attack) a += n.mods.attack;
     return a;
   }
   defenseAt(n, t) {
@@ -410,7 +464,6 @@ class Game {
     if (kind === 'upgrade' && T === 'scholarly') m *= 0.7;
     if (kind === 'harbor' && T === 'maritime') m *= 0.5;
     if (n.edict === 'corvee' && ['improve', 'road', 'castle', 'village'].includes(kind)) m *= 0.75;
-    if (n.mods && n.mods[kind] !== undefined) m *= n.mods[kind]; // fortune card in play this turn
     return m;
   }
   scaleCost(cost, m) {
@@ -418,10 +471,7 @@ class Game {
     for (const k in cost) out[k] = Math.max(1, Math.round(cost[k] * m));
     return out;
   }
-  expandCost(n) {
-    if (n.mods && n.mods.expand === 0) return { gold: 0 };
-    return this.scaleCost({ gold: 3 + Math.round(Math.pow(n.owned.size, 1.1)) }, this.costMul(n, 'expand'));
-  }
+  expandCost(n) { return this.scaleCost({ gold: 3 + Math.round(Math.pow(n.owned.size, 1.1)) }, this.costMul(n, 'expand')); }
   canAfford(n, c) { return (c.mat || 0) <= n.mat && (c.gold || 0) <= n.gold; }
   pay(n, c) { n.mat -= c.mat || 0; n.gold -= c.gold || 0; }
   costStr(c) { return Object.entries(c).map(([k, v]) => `${v} ${{ mat: 'materials', gold: 'gold' }[k]}`).join(', '); }
@@ -498,7 +548,7 @@ class Game {
       }
       case 'farm': case 'mine': case 'lumber': case 'pasture': case 'fishery': {
         const I = IMPROVEMENTS[id];
-        const cost = this.scaleCost(I.cost, this.costMul(n, 'improve') * (n.mods && n.mods[id] !== undefined ? n.mods[id] : 1));
+        const cost = this.scaleCost(I.cost, this.costMul(n, 'improve'));
         const label = `Build ${I.name}`;
         if (!t || t.owner !== n.id) return r(false, 'Must be your tile.', cost, label);
         if (t.improvement === id) return r(false, 'Already built here.', cost, label);
@@ -800,14 +850,15 @@ class Game {
       let v = this.relations[k] || 0;
       if (this.atWar(n, o)) { this.relations[k] = Math.max(-100, v - 1); continue; }
       const trading = n.trades.has(o.id);
-      if (trading && v < 60) v += (n.edict === 'fairs' || o.edict === 'fairs') ? 3 : 2;
-      if (n.leader.trait === 'charismatic' || o.leader.trait === 'charismatic') v += 1.5;
+      if (trading && v < 50) v += (n.edict === 'fairs' || o.edict === 'fairs') ? 2.5 : 1.5;
+      if ((n.leader.trait === 'charismatic' || o.leader.trait === 'charismatic') && v < 60) v += 1;
       if (this.turn > 12 && this.bordersNation(n, o)) {
         let friction = trading ? 0 : 0.75;
         if (this.isAggressive(n) || this.isAggressive(o)) friction += trading ? 0.5 : 1;
-        if (frontier.get(n.id) < 4 || frontier.get(o.id) < 4) friction += trading ? 0.5 : 1; // land hunger
+        if (frontier.get(n.id) < 4 || frontier.get(o.id) < 4) friction += trading ? 1 : 1.5; // land hunger
         v -= friction;
       }
+      v -= v * 0.02; // goodwill and grudges both fade with time
       v += v > 0 ? -0.5 : v < 0 ? 0.5 : 0;
       this.relations[k] = Math.max(-100, Math.min(100, v));
     }
@@ -941,6 +992,11 @@ class Game {
     const aggressive = T === 'martial' || L === 'warlike' || L === 'reckless';
     const add = (score, id, tile, target) => cands.push({ score: score * jitter(), id, tile, target });
     this.refreshBorders();
+    // Accepting an offered peace needs no card and no action.
+    for (const oid of Array.from(n.peaceOffers)) {
+      const o = this.nation(oid);
+      if (o.alive && this.atWar(n, o) && (this.rel(n, o) > -50 || n.lostTiles >= 2 || this.attackStrength(o) >= this.attackStrength(n))) this.doAction(n, 'peace', null, oid);
+    }
     const worked = this.workedTiles(n);
     const near = this.influenceTiles(n);
     const frontier = this.frontierTiles(n);
@@ -1050,7 +1106,7 @@ class Game {
       if (atk - def < 2) s -= 1;
       if (this.atWar(n, o)) add(s + 1, 'conquer', nb);
       else {
-        if (relv >= 30 && L !== 'reckless') continue;
+        if (relv >= (aggressive ? 45 : 30) && L !== 'reckless') continue;
         if (relv > -15 && !aggressive) continue;
         if (this.truceActive(n, o)) continue;
         if (!warTargets.has(o.id) || warTargets.get(o.id) < s) warTargets.set(o.id, s);
@@ -1074,11 +1130,15 @@ class Game {
       if (want !== n.edict) add(4.5 + (want === 'levy' ? 2 : 0), 'edict', null, want);
     }
 
-    // Choose: best affordable, unless something much better is worth saving for.
+    // Bonus cards are free: play them all first.
+    for (let i = n.hand.length - 1; i >= 0; i--) if (!CARDS[n.hand[i]].action) this.playCard(n, i);
+
+    // Choose the best affordable action we hold a card for, unless something much better is worth saving for.
     cands.sort((a, b) => b.score - a.score);
     const worthSaving = new Set(['village', 'upgrade', 'castle', 'harbor']);
     let choice = null, bestUnaffordable = null;
     for (const c of cands) {
+      if (!this.hasCardFor(n, c.id)) continue;
       const chk = this.checkAction(n, c.id, c.tile, c.target);
       if (chk.ok) { if (!choice) choice = c; }
       else if (!bestUnaffordable && worthSaving.has(c.id) && chk.why.startsWith('Cannot afford')) bestUnaffordable = c;
@@ -1089,29 +1149,22 @@ class Game {
       n.lastAction = 'Saving up';
       return r;
     }
-    if (!n.cardPlayed && n.hand.length) this.aiPlayCard(n, choice);
     if (!choice) return this.doAction(n, 'wait');
-    return this.doAction(n, choice.id, choice.tile, choice.target);
+    return this.playCard(n, this.handIndexFor(n, choice.id), choice.tile, choice.target);
   }
 
-  // Immediate cards are always worth playing; modifier cards only when they discount what we are about to do.
-  aiPlayCard(n, choice) {
-    const matches = (mod, id) => {
-      if (!id) return false;
-      if (mod.village && id === 'village') return true;
-      if (mod.improve && IMPROVEMENTS[id]) return true;
-      if (mod.fishery && id === 'fishery') return true;
-      if (mod.harbor && id === 'harbor') return true;
-      if (mod.expand !== undefined && id === 'expand') return true;
-      if (mod.upgrade && id === 'upgrade') return true;
-      if (mod.castle && id === 'castle') return true;
-      if (mod.attack && id === 'conquer') return true;
-      return false;
-    };
-    const now = n.hand.find(id => CARDS[id].kind === 'now');
-    const useful = n.hand.find(id => CARDS[id].kind === 'mod' && matches(CARDS[id].mod, choice && choice.id));
-    const pick = useful || now;
-    if (pick) this.playCard(n, pick);
+  // After acting, the AI throws away cards it cannot use so fresh ones arrive next turn.
+  aiTidyHand(n) {
+    const ctx = this.cardContext(n);
+    const keep = [];
+    const seen = {};
+    for (const id of n.hand) {
+      seen[id] = (seen[id] || 0) + 1;
+      if (this.cardUsefulness(n, id, ctx) < 0.3) continue;
+      if (seen[id] > 2) continue;
+      keep.push(id);
+    }
+    n.hand = keep;
   }
 
   runAITurns() {
@@ -1119,6 +1172,7 @@ class Game {
       if (n.isPlayer || !n.alive) continue;
       let guard = 5;
       while (n.ap > 0 && guard-- > 0) this.aiTurn(n);
+      this.aiTidyHand(n);
     }
   }
 }
