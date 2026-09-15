@@ -17,10 +17,154 @@ function shadeColor(hex, amt) {
 function rgba(hex, a) { const [r, g, b] = hexToRgb(hex); return `rgba(${r},${g},${b},${a})`; }
 function isLight(hex) { const [r, g, b] = hexToRgb(hex); return (r * 299 + g * 587 + b * 114) / 1000 > 160; }
 
+// ---------- Sprites ----------
+// Small vector drawings rendered once into offscreen canvases (SPRITE_PX square, transparent
+// background) and scaled onto tiles. Settlement/castle sprites are tinted per nation colour.
+const SPRITE_PX = 64;
+
+class Sprites {
+  constructor() { this.cache = new Map(); }
+  get(name, color = '') {
+    const key = name + '|' + color;
+    let c = this.cache.get(key);
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = c.height = SPRITE_PX;
+      const g = c.getContext('2d');
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      this['draw_' + name](g, SPRITE_PX, color);
+      this.cache.set(key, c);
+    }
+    return c;
+  }
+
+  // helpers
+  rect(g, x, y, w, h, fill, stroke) { g.fillStyle = fill; g.fillRect(x, y, w, h); if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1.5; g.strokeRect(x, y, w, h); } }
+  poly(g, pts, fill, stroke) {
+    g.beginPath(); g.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]); g.closePath();
+    if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke(); }
+  }
+  circle(g, x, y, r, fill, stroke) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1.5; g.stroke(); } }
+  line(g, x1, y1, x2, y2, color, w) { g.strokeStyle = color; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+  house(g, x, y, w, h, roof, wall = '#e8dcc3') {
+    this.rect(g, x, y, w, h, wall, '#2b2118');
+    this.poly(g, [x - 2, y, x + w / 2, y - h * 0.7, x + w + 2, y], roof, '#2b2118');
+    this.rect(g, x + w * 0.38, y + h * 0.45, w * 0.24, h * 0.55, '#3b2a1a');
+  }
+
+  draw_farm(g, S) {
+    // ploughed field with furrows and a wheat row
+    this.poly(g, [6, 22, 58, 22, 58, 58, 6, 58], '#a9743d', '#5b3a1c');
+    for (let i = 0; i < 5; i++) this.line(g, 9, 28 + i * 6.5, 55, 28 + i * 6.5, '#7c522a', 2);
+    for (let i = 0; i < 6; i++) {
+      const x = 10 + i * 8.6;
+      this.line(g, x, 22, x, 9, '#c9a227', 2.2);
+      this.circle(g, x, 8, 3, '#e9c85a', '#8a6a12');
+      this.circle(g, x - 2.5, 12, 2.2, '#e9c85a');
+      this.circle(g, x + 2.5, 12, 2.2, '#e9c85a');
+    }
+  }
+  draw_mine(g, S) {
+    // rock mound, timber-framed shaft, ore cart
+    this.poly(g, [4, 52, 14, 22, 32, 10, 50, 22, 60, 52], '#8d8a83', '#4a4842');
+    this.poly(g, [22, 52, 22, 34, 32, 26, 42, 34, 42, 52], '#1d1a17');
+    this.line(g, 20, 52, 20, 33, '#7a4e22', 4); this.line(g, 44, 52, 44, 33, '#7a4e22', 4); this.line(g, 18, 33, 46, 33, '#7a4e22', 4);
+    this.rect(g, 6, 44, 16, 9, '#4b3b2a', '#221a12');
+    this.circle(g, 10, 55, 2.8, '#2a2a2a'); this.circle(g, 18, 55, 2.8, '#2a2a2a');
+    this.circle(g, 11, 43, 2.2, '#d8b23a'); this.circle(g, 16, 42, 2, '#d8b23a');
+    this.line(g, 48, 20, 56, 12, '#5b3a1c', 3); this.line(g, 52, 10, 60, 14, '#9aa0aa', 4);
+  }
+  draw_lumber(g, S) {
+    // stumps, a log pile and an axe
+    for (const [x, y] of [[14, 20], [46, 16]]) {
+      this.rect(g, x - 5, y, 10, 9, '#6b4423', '#3a2410');
+      this.circle(g, x, y, 6, '#c9a06a', '#5b3a1c'); this.circle(g, x, y, 3, null, '#8a6540');
+    }
+    const logs = [[20, 48], [32, 48], [44, 48], [26, 39], [38, 39], [32, 30]];
+    for (const [x, y] of logs) { this.line(g, x - 10, y, x + 10, y, '#7a4e22', 9); this.circle(g, x + 10, y, 4.5, '#d6b27a', '#5b3a1c'); }
+    this.line(g, 52, 56, 60, 34, '#5b3a1c', 3);
+    this.poly(g, [56, 30, 64, 34, 60, 42, 54, 38], '#b9bec7', '#4a4f58');
+  }
+  draw_pasture(g, S) {
+    // fenced meadow with grazing animals
+    this.poly(g, [4, 30, 60, 30, 60, 60, 4, 60], '#7fb36a');
+    for (let i = 0; i < 6; i++) this.line(g, 8 + i * 9.5, 30, 8 + i * 9.5, 22, '#8a5a2b', 3);
+    this.line(g, 6, 24, 58, 24, '#8a5a2b', 3);
+    for (const [x, y, s] of [[22, 46, 1], [44, 40, 0.8]]) {
+      g.save(); g.translate(x, y); g.scale(s, s);
+      this.circle(g, 0, 0, 9, '#f5f2e8', '#3a3a3a');
+      this.circle(g, 10, -4, 4.5, '#2f2a26');
+      this.line(g, -5, 8, -5, 14, '#2f2a26', 2.5); this.line(g, 5, 8, 5, 14, '#2f2a26', 2.5);
+      g.restore();
+    }
+  }
+  draw_fishery(g, S) {
+    // wooden pier with posts, a boat and a hanging net
+    this.rect(g, 4, 30, 40, 8, '#a67c52', '#5b3a1c');
+    for (const x of [8, 20, 32, 42]) this.line(g, x, 38, x, 50, '#5b3a1c', 3);
+    this.poly(g, [30, 52, 62, 52, 56, 60, 34, 60], '#6b4423', '#2b2118');
+    this.line(g, 46, 52, 46, 34, '#3a2410', 2);
+    this.poly(g, [47, 35, 60, 48, 47, 48], '#f4f1e6', '#7d828c');
+    g.strokeStyle = '#d7c8a0'; g.lineWidth = 1;
+    for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(6 + i * 5, 10); g.lineTo(6 + i * 5, 28); g.stroke(); g.beginPath(); g.moveTo(4, 12 + i * 5); g.lineTo(24, 12 + i * 5); g.stroke(); }
+    this.circle(g, 14, 20, 3, '#8ecae6');
+  }
+  draw_ruins(g, S) {
+    this.poly(g, [6, 58, 58, 58, 52, 48, 12, 48], '#c9b88a', '#8a7a52');
+    this.rect(g, 14, 22, 8, 26, '#d9d5c8', '#6e6a60'); this.rect(g, 12, 18, 12, 5, '#d9d5c8', '#6e6a60');
+    this.rect(g, 40, 32, 8, 16, '#d9d5c8', '#6e6a60'); this.poly(g, [40, 32, 48, 32, 46, 26, 42, 28], '#d9d5c8', '#6e6a60');
+    this.poly(g, [26, 48, 36, 48, 34, 40, 28, 42], '#bfbbae', '#6e6a60');
+    this.line(g, 52, 24, 58, 12, '#d9d5c8', 6);
+  }
+  draw_village(g, S, color) {
+    this.house(g, 10, 30, 18, 16, color);
+    this.house(g, 36, 34, 18, 14, color);
+    this.rect(g, 4, 50, 56, 5, '#8a6a3a');
+  }
+  draw_town(g, S, color) {
+    this.house(g, 6, 34, 16, 16, color);
+    this.house(g, 24, 28, 18, 20, color);
+    this.house(g, 44, 36, 16, 14, color);
+    this.rect(g, 28, 8, 10, 22, '#d9d0bb', '#2b2118');
+    this.poly(g, [26, 10, 33, 0, 40, 10], color, '#2b2118');
+    this.rect(g, 2, 52, 60, 5, '#8a6a3a');
+  }
+  draw_city(g, S, color) {
+    this.rect(g, 2, 40, 60, 16, '#b9b3a2', '#2b2118');
+    for (let i = 0; i < 6; i++) this.rect(g, 4 + i * 10, 36, 6, 5, '#b9b3a2', '#2b2118');
+    this.house(g, 6, 22, 14, 16, color);
+    this.house(g, 44, 24, 14, 14, color);
+    this.rect(g, 24, 10, 16, 30, '#d9d0bb', '#2b2118');
+    for (let i = 0; i < 3; i++) this.rect(g, 24 + i * 6, 6, 4, 5, '#d9d0bb', '#2b2118');
+    this.rect(g, 30, 30, 4, 10, '#3b2a1a');
+    this.line(g, 32, 6, 32, -2 + 8, color, 2);
+    this.poly(g, [32, 2, 44, 5, 32, 9], color);
+    this.rect(g, 29, 46, 6, 10, '#3b2a1a');
+  }
+  draw_castle(g, S, color) {
+    this.rect(g, 8, 26, 48, 30, '#7d7f86', '#2a2b2f');
+    for (let i = 0; i < 7; i++) this.rect(g, 8 + i * 7.2, 21, 4.5, 6, '#7d7f86', '#2a2b2f');
+    this.rect(g, 4, 14, 14, 42, '#8e9098', '#2a2b2f'); this.rect(g, 46, 14, 14, 42, '#8e9098', '#2a2b2f');
+    for (const x of [4, 46]) for (let i = 0; i < 3; i++) this.rect(g, x + i * 5, 9, 3.5, 6, '#8e9098', '#2a2b2f');
+    this.poly(g, [26, 56, 26, 40, 32, 34, 38, 40, 38, 56], '#2b2118');
+    this.line(g, 32, 34, 32, 12, '#3a2410', 2);
+    this.poly(g, [32, 12, 46, 16, 32, 21], color, '#2a2b2f');
+    for (const [x, y] of [[9, 24], [51, 24], [9, 40], [51, 40]]) this.rect(g, x, y, 3, 6, '#1d1a17');
+  }
+  draw_harbor(g, S) {
+    this.circle(g, 32, 32, 28, '#2e6f9e', '#12324a');
+    this.line(g, 32, 12, 32, 50, '#f4f1e6', 5);
+    this.line(g, 20, 22, 44, 22, '#f4f1e6', 5);
+    g.strokeStyle = '#f4f1e6'; g.lineWidth = 5; g.beginPath(); g.arc(32, 36, 14, Math.PI * 0.15, Math.PI * 0.85); g.stroke();
+    this.circle(g, 32, 10, 4, null, '#f4f1e6');
+  }
+}
+
 class Renderer {
   constructor(canvas, game) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.sprites = new Sprites();
     this.cam = { x: 0, y: 0, zoom: 1.5 };
     this.hover = null;
     this.selected = null;
@@ -302,8 +446,8 @@ class Renderer {
       const t = game.tiles[y * game.W + x];
       const px = this.cam.x + x * s, py = this.cam.y + y * s;
       if (t.ruins) this.drawRuins(t, px, py, s);
-      if (t.resource && !t.settlement && !t.castle) this.drawResource(t, px, py, s);
       if (t.improvement) this.drawImprovement(t, px, py, s);
+      if (t.resource && !t.settlement && !t.castle) this.drawResource(t, px, py, s, !!t.improvement);
       if (t.castle) this.drawCastle(t, px, py, s);
       if (t.settlement) this.drawSettlement(t, px, py, s);
     }
@@ -355,73 +499,73 @@ class Renderer {
 
   emojiFont(px) { return `${Math.floor(px)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`; }
 
-  drawRuins(t, px, py, s) {
-    const ctx = this.ctx;
-    if (s >= 12) { ctx.font = this.emojiFont(s * 0.6); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🏺', px + s / 2, py + s / 2 + 1); }
-    else { ctx.fillStyle = '#d9b36c'; ctx.fillRect(px + s * 0.3, py + s * 0.3, s * 0.4, s * 0.4); }
+  // Draw a sprite centred in the tile at `frac` of the tile size.
+  sprite(name, color, px, py, s, frac) {
+    const d = s * frac;
+    this.ctx.drawImage(this.sprites.get(name, color), px + (s - d) / 2, py + (s - d) / 2, d, d);
   }
 
-  drawResource(t, px, py, s) {
+  drawRuins(t, px, py, s) {
+    if (s >= 9) this.sprite('ruins', '', px, py, s, 0.85);
+    else { this.ctx.fillStyle = '#d9b36c'; this.ctx.fillRect(px + s * 0.3, py + s * 0.3, s * 0.4, s * 0.4); }
+  }
+
+  // Resources: centred emoji on a plain tile; a small badge in the corner once the tile is improved.
+  drawResource(t, px, py, s, improved) {
     const res = RESOURCE_BY_ID[t.resource];
     const ctx = this.ctx;
-    if (s >= 12) {
-      ctx.font = this.emojiFont(s * 0.55); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(res.icon, px + s / 2, py + s / 2 + 1);
-    } else {
+    if (s < 12) {
       ctx.fillStyle = { animal: '#f4d35e', sea: '#8ecae6', ore: '#c0c0c0', wood: '#8b5a2b', crop: '#e9c46a' }[res.cat];
-      ctx.beginPath(); ctx.arc(px + s / 2, py + s / 2, Math.max(1.5, s * 0.18), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + s * 0.25, py + s * 0.25, Math.max(1.5, s * 0.15), 0, Math.PI * 2); ctx.fill();
+      return;
+    }
+    if (improved) {
+      const b = s * 0.34;
+      ctx.fillStyle = 'rgba(20,22,26,0.75)';
+      ctx.beginPath(); ctx.arc(px + b * 0.6, py + b * 0.6, b * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.font = this.emojiFont(b * 0.8); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(res.icon, px + b * 0.6, py + b * 0.65);
+    } else {
+      ctx.font = this.emojiFont(s * 0.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(res.icon, px + s / 2, py + s / 2 + 1);
     }
   }
 
   drawImprovement(t, px, py, s) {
-    const ctx = this.ctx;
-    const imp = IMPROVEMENTS[t.improvement];
-    const r = Math.max(2.5, s * 0.2);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(px + s - r * 2 - 1, py + 1, r * 2, r * 2);
-    if (s >= 16) {
-      ctx.font = this.emojiFont(r * 1.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(imp.icon, px + s - r - 1, py + r + 1.5);
-    } else {
-      ctx.fillStyle = { farm: '#e9c46a', mine: '#bbb', lumber: '#a0522d', pasture: '#f4a261', fishery: '#8ecae6' }[t.improvement];
-      ctx.fillRect(px + s - r * 2, py + 2, r * 2 - 2, r * 2 - 2);
+    if (s >= 10) this.sprite(t.improvement, '', px, py, s, 0.88);
+    else {
+      this.ctx.fillStyle = { farm: '#e9c46a', mine: '#bbb', lumber: '#a0522d', pasture: '#f4a261', fishery: '#8ecae6' }[t.improvement];
+      this.ctx.fillRect(px + s * 0.25, py + s * 0.25, s * 0.5, s * 0.5);
     }
   }
 
   drawCastle(t, px, py, s) {
-    const ctx = this.ctx;
     const n = this.game.nations[t.owner];
-    const w = s * 0.6, h = s * 0.55, x = px + (s - w) / 2, y = py + s * 0.35;
-    ctx.fillStyle = '#5d5d66'; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = '#8d8d99';
-    const bw = w / 5;
-    for (let i = 0; i < 5; i += 2) ctx.fillRect(x + i * bw, y - bw * 0.9, bw, bw);
-    ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    ctx.fillStyle = n.color; ctx.fillRect(x + w / 2 - 1, y - h * 0.5, 2, h * 0.5);
+    if (s >= 9) this.sprite('castle', n.color, px, py, s, 0.92);
+    else { this.ctx.fillStyle = '#7d7f86'; this.ctx.fillRect(px + s * 0.2, py + s * 0.25, s * 0.6, s * 0.55); }
   }
 
   drawSettlement(t, px, py, s) {
     const ctx = this.ctx;
     const n = this.game.nations[t.owner];
     const st = t.settlement;
-    const size = { village: 0.42, town: 0.58, city: 0.74 }[st.type] * s;
-    const x = px + (s - size) / 2, y = py + (s - size) / 2;
-    ctx.fillStyle = '#1b1b1f';
-    ctx.fillRect(x - 1, y - 1, size + 2, size + 2);
-    ctx.fillStyle = n.color;
-    ctx.fillRect(x, y, size, size);
-    ctx.fillStyle = isLight(n.color) ? '#333' : '#fff';
-    if (st.type === 'village') {
-      ctx.fillRect(x + size * 0.3, y + size * 0.3, size * 0.4, size * 0.4);
-    } else if (st.type === 'town') {
-      ctx.fillRect(x + size * 0.18, y + size * 0.4, size * 0.25, size * 0.42);
-      ctx.fillRect(x + size * 0.57, y + size * 0.25, size * 0.25, size * 0.57);
+    const frac = { village: 0.72, town: 0.9, city: 1.05 }[st.type];
+    if (s >= 9) {
+      if (st.capital) {
+        ctx.beginPath(); ctx.arc(px + s / 2, py + s / 2, s * 0.5, 0, Math.PI * 2);
+        ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = Math.max(2, s * 0.16); ctx.stroke();
+        ctx.strokeStyle = '#f1d77a'; ctx.lineWidth = Math.max(1, s * 0.09); ctx.stroke();
+      }
+      this.sprite(st.type, n.color, px, py, s, frac);
     } else {
-      ctx.fillRect(x + size * 0.12, y + size * 0.45, size * 0.2, size * 0.43);
-      ctx.fillRect(x + size * 0.4, y + size * 0.15, size * 0.2, size * 0.73);
-      ctx.fillRect(x + size * 0.68, y + size * 0.35, size * 0.2, size * 0.53);
+      const size = { village: 0.45, town: 0.6, city: 0.75 }[st.type] * s;
+      ctx.fillStyle = '#1b1b1f'; ctx.fillRect(px + (s - size) / 2 - 1, py + (s - size) / 2 - 1, size + 2, size + 2);
+      ctx.fillStyle = n.color; ctx.fillRect(px + (s - size) / 2, py + (s - size) / 2, size, size);
+      if (st.capital) { ctx.strokeStyle = '#f1d77a'; ctx.lineWidth = 1.5; ctx.strokeRect(px + (s - size) / 2 - 1, py + (s - size) / 2 - 1, size + 2, size + 2); }
     }
-    if (st.capital) { ctx.strokeStyle = '#ffd166'; ctx.lineWidth = Math.max(1, s * 0.08); ctx.strokeRect(x - 1, y - 1, size + 2, size + 2); }
-    if (t.harbor) { ctx.fillStyle = '#8ecae6'; ctx.fillRect(px + 1, py + s - s * 0.28, s * 0.28, s * 0.26); }
+    if (t.harbor && s >= 12) {
+      const d = s * 0.36;
+      ctx.drawImage(this.sprites.get('harbor'), px + s - d - 1, py + s - d - 1, d, d);
+    }
   }
 }

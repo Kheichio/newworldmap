@@ -10,6 +10,8 @@ const UI = {
 };
 
 const $ = id => document.getElementById(id);
+const store = (k, v) => { try { localStorage.setItem('nwm.' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } };
+const load = (k, d) => { try { const v = localStorage.getItem('nwm.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDelta = v => `<span class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : ''}${v}</span>`;
 const yieldStr = y => {
@@ -122,6 +124,50 @@ function initMap() {
   }
   UI.renderer.player = UI.player;
   resizeCanvas();
+  initLegend();
+}
+
+// Draw the real sprites into the legend so the key matches the map.
+function initLegend() {
+  for (const el of document.querySelectorAll('#legend-grid [data-sprite]')) {
+    el.innerHTML = '';
+    const c = document.createElement('canvas');
+    c.width = c.height = 40;
+    const g = c.getContext('2d');
+    const name = el.dataset.sprite;
+    const tint = ['village', 'town', 'city', 'castle'].includes(name) ? UI.player.color : '';
+    g.drawImage(UI.renderer.sprites.get(name, tint), 0, 0, 40, 40);
+    el.appendChild(c);
+  }
+}
+
+// ---------------- Collapsible panels & drawer ----------------
+function initPanels() {
+  for (const d of document.querySelectorAll('details.acc')) {
+    const key = 'acc.' + d.dataset.acc;
+    const saved = load(key, null);
+    if (saved !== null) d.open = saved;
+    d.addEventListener('toggle', () => store(key, d.open));
+  }
+  const st = $('standings');
+  st.open = load('standings', true);
+  st.addEventListener('toggle', () => store('standings', st.open));
+  UI.drawerTab = load('drawer.tab', 'report');
+  UI.drawerOpen = load('drawer.open', true);
+  for (const b of document.querySelectorAll('.drawer-tab')) b.onclick = () => { UI.drawerTab = b.dataset.tab; UI.drawerOpen = true; store('drawer.tab', UI.drawerTab); store('drawer.open', true); renderDrawer(); };
+  $('drawer-toggle').onclick = () => { UI.drawerOpen = !UI.drawerOpen; store('drawer.open', UI.drawerOpen); renderDrawer(); };
+}
+
+function renderDrawer() {
+  const drawer = $('drawer');
+  drawer.classList.toggle('closed', !UI.drawerOpen);
+  $('drawer-toggle').textContent = UI.drawerOpen ? '▾' : '▴';
+  for (const b of document.querySelectorAll('.drawer-tab')) b.classList.toggle('active', b.dataset.tab === UI.drawerTab);
+  $('report').classList.toggle('hidden', UI.drawerTab !== 'report');
+  $('log').classList.toggle('hidden', UI.drawerTab !== 'log');
+  // one-line summary shown in the bar: the most notable thing since the last move
+  const notable = UI.report.find(e => e.kind === 'bad') || UI.report.find(e => e.kind === 'event') || UI.report.find(e => e.kind === 'good') || UI.report[0];
+  $('drawer-summary').textContent = notable ? notable.msg.replace(/<[^>]+>/g, '') : '';
 }
 
 function centerOnHome() {
@@ -419,6 +465,7 @@ function playerAction(id, tile, target) {
   g.endTurn();
   UI.busy = false;
   buildReport(logStart, before);
+  if (UI.drawerTab !== 'report') { UI.drawerTab = 'report'; store('drawer.tab', 'report'); }
   refreshAll();
   if (g.over && !g.continued) showGameOver();
 }
@@ -479,6 +526,7 @@ function renderTopbar() {
     <div class="res-pill" title="Total population across your settlements. Growth ${Math.floor(p.growth)} / ${need}."><span class="icon">👥</span><div><div class="lbl">People</div><div class="num">${inc.pop}</div></div></div>
     <div class="res-pill" title="Score: territory, settlements, population, castles, trade and gold."><span class="icon">🏛️</span><div><div class="lbl">Score</div><div class="num">${g.score(p)}</div></div></div>`;
   const ranked = g.nations.slice().sort((a, b) => g.score(b) - g.score(a));
+  $('standings-sum').textContent = `Standings — you are #${ranked.indexOf(p) + 1} of ${ranked.length}`;
   $('ranking').innerHTML = ranked.map((n, i) => `<div class="rank-row${n.isPlayer ? ' me' : ''}${n.alive ? '' : ' dead'}" title="${esc(n.name)} — ${esc(n.leader.name)}">
     <span>${i + 1}</span><span class="swatch" style="background:${n.color}"></span><span>${esc(n.colorName)}${n.isPlayer ? ' · you' : (n.alive && g.atWar(p, n) ? ' <span class="war">⚔️ war</span>' : '')}</span><span class="sc">${g.score(n)}</span></div>`).join('');
 }
@@ -504,6 +552,7 @@ function renderReport() {
   $('report').innerHTML = UI.report.length
     ? UI.report.map(e => `<div class="ev ${e.kind}">${e.kind === 'gold' && e.msg.startsWith('Income') ? e.msg : esc(e.msg)}</div>`).join('')
     : '<div class="empty">Nothing yet.</div>';
+  renderDrawer();
 }
 
 function renderNationPanel() {
@@ -512,8 +561,8 @@ function renderNationPanel() {
   const T = NATION_TRAITS[p.trait], L = LEADER_TRAITS[p.leader.trait];
   const need = g.growthNeed(inc.pop);
   const pct = Math.min(100, Math.round((p.growth / need) * 100));
-  $('nation-panel').innerHTML = `
-    <h3 class="engraved">Your nation</h3>
+  $('nation-sum').textContent = `${T.name} · ${L.name} · score ${g.score(p)}`;
+  $('nation-body').innerHTML = `
     <div class="nation-head"><div class="big-swatch" style="background:${p.color}"></div>
       <div><div class="nation-name">${esc(p.name)}</div><div class="nation-leader">${esc(p.leader.name)} · ${p.colorName} nation${p.alive ? '' : ' · <span class="neg">fallen</span>'}</div></div></div>
     <div class="trait"><b>${T.name}</b> — ${T.desc}</div>
@@ -529,7 +578,8 @@ function renderNationPanel() {
 
 function renderEdictPanel() {
   const p = UI.player, g = UI.game;
-  let html = '<h3 class="engraved">Edicts</h3>';
+  $('edict-sum').textContent = p.edict ? `${EDICTS[p.edict].icon} ${EDICTS[p.edict].name} · ${Math.max(0, p.edictUntil - g.turn)} turns` : 'none in force';
+  let html = '';
   if (p.edict) {
     const E = EDICTS[p.edict];
     html += `<div class="edict-now">${E.icon} <b>${E.name}</b> in force for ${Math.max(0, p.edictUntil - g.turn)} more turn${p.edictUntil - g.turn === 1 ? '' : 's'}: ${E.desc}</div>`;
@@ -542,14 +592,16 @@ function renderEdictPanel() {
       <span class="al">${E.icon} ${E.name}</span><span class="cost">${p.edict === id ? 'active' : costHtml(c.cost)}</span><span class="sub">${E.desc}</span></button>`;
   }
   html += '</div>';
-  const panel = $('edict-panel');
+  const panel = $('edict-body');
   panel.innerHTML = html;
   for (const b of panel.querySelectorAll('button[data-edict]')) b.onclick = () => playerAction('edict', null, b.dataset.edict);
 }
 
 function renderDiploPanel() {
   const p = UI.player, g = UI.game;
-  let html = '<h3 class="engraved">Other nations</h3>';
+  const wars = g.enemies(p).length, offers = p.peaceOffers.size;
+  $('diplo-sum').textContent = wars ? `⚔️ at war with ${wars}${offers ? ` · ${offers} peace offer${offers === 1 ? '' : 's'}` : ''}` : `${p.trades.size} trade route${p.trades.size === 1 ? '' : 's'} · at peace`;
+  let html = '';
   for (const n of g.nations) {
     if (n === p) continue;
     const T = NATION_TRAITS[n.trait], L = LEADER_TRAITS[n.leader.trait];
@@ -583,7 +635,7 @@ function renderDiploPanel() {
       </div>
     </div>`;
   }
-  const panel = $('diplo-panel');
+  const panel = $('diplo-body');
   panel.innerHTML = html;
   for (const b of panel.querySelectorAll('button[data-act]')) b.onclick = () => {
     const id = b.dataset.act, target = parseInt(b.dataset.n, 10);

@@ -37,19 +37,37 @@
       <div id="map-wrap">
         <canvas id="map"></canvas>
         <div id="mode-banner" class="mode-banner hidden"></div>
-        <div id="ranking" class="ranking"></div>
+        <details id="standings" class="standings" open>
+          <summary id="standings-sum">Standings</summary>
+          <div id="ranking" class="ranking"></div>
+        </details>
+        <div id="drawer" class="drawer plate">
+          <div class="drawer-bar">
+            <button class="drawer-tab active" data-tab="report">Since your last move</button>
+            <button class="drawer-tab" data-tab="log">Chronicle</button>
+            <span id="drawer-summary" class="drawer-summary"></span>
+            <button id="drawer-toggle" class="drawer-toggle" title="Show / hide">▾</button>
+          </div>
+          <div id="drawer-body" class="drawer-body">
+            <div id="report" class="report"></div>
+            <div id="log" class="hidden"></div>
+          </div>
+        </div>
         <div id="legend" class="legend plate hidden">
           <div class="legend-title">Legend</div>
-          <div class="legend-grid">
-            <span class="lg-sym"><i class="sym village"></i></span><span>Village</span>
-            <span class="lg-sym"><i class="sym town"></i></span><span>Town</span>
-            <span class="lg-sym"><i class="sym city"></i></span><span>City</span>
-            <span class="lg-sym"><i class="sym capital"></i></span><span>Capital (gold ring)</span>
-            <span class="lg-sym"><i class="sym castle"></i></span><span>Castle</span>
-            <span class="lg-sym"><i class="sym harbor"></i></span><span>Harbour (blue corner)</span>
-            <span class="lg-sym"><i class="sym imp"></i></span><span>Improvement (top-right icon)</span>
-            <span class="lg-sym">🌾🐄⛏️</span><span>Resource on tile</span>
-            <span class="lg-sym">🏺</span><span>Ancient ruins — claim the tile to explore</span>
+          <div class="legend-grid" id="legend-grid">
+            <span class="lg-sym" data-sprite="village"></span><span>Village (roofs in nation colour)</span>
+            <span class="lg-sym" data-sprite="town"></span><span>Town</span>
+            <span class="lg-sym" data-sprite="city"></span><span>City · capital has a gold ring</span>
+            <span class="lg-sym" data-sprite="castle"></span><span>Castle</span>
+            <span class="lg-sym" data-sprite="harbor"></span><span>Harbour badge on a settlement</span>
+            <span class="lg-sym" data-sprite="farm"></span><span>Farm</span>
+            <span class="lg-sym" data-sprite="mine"></span><span>Mine</span>
+            <span class="lg-sym" data-sprite="lumber"></span><span>Lumber camp</span>
+            <span class="lg-sym" data-sprite="pasture"></span><span>Pasture</span>
+            <span class="lg-sym" data-sprite="fishery"></span><span>Fishery</span>
+            <span class="lg-sym" data-sprite="ruins"></span><span>Ancient ruins — claim to explore</span>
+            <span class="lg-sym">🌾🐄⛏️</span><span>Resource (moves to a corner badge once improved)</span>
             <span class="lg-sym"><i class="sym road"></i></span><span>Road</span>
             <span class="lg-sym"><i class="sym river"></i></span><span>River</span>
             <span class="lg-sym"><i class="sym border"></i></span><span>Border (nation colour)</span>
@@ -74,21 +92,20 @@
 
         <section id="tile-panel" class="plate panel"></section>
 
-        <section id="report-panel" class="plate panel">
-          <h3 class="engraved">Since your last move</h3>
-          <div id="report" class="report"></div>
-        </section>
+        <details id="nation-panel" class="plate panel acc" data-acc="nation">
+          <summary><span class="acc-title">Your nation</span><span id="nation-sum" class="acc-sum"></span></summary>
+          <div id="nation-body" class="acc-body"></div>
+        </details>
 
-        <section id="nation-panel" class="plate panel"></section>
+        <details id="diplo-panel" class="plate panel acc" data-acc="diplo" open>
+          <summary><span class="acc-title">Other nations</span><span id="diplo-sum" class="acc-sum"></span></summary>
+          <div id="diplo-body" class="acc-body"></div>
+        </details>
 
-        <section id="edict-panel" class="plate panel"></section>
-
-        <section id="diplo-panel" class="plate panel"></section>
-
-        <section id="log-panel" class="plate panel">
-          <h3 class="engraved">Chronicle</h3>
-          <div id="log"></div>
-        </section>
+        <details id="edict-panel" class="plate panel acc" data-acc="edict">
+          <summary><span class="acc-title">Edicts</span><span id="edict-sum" class="acc-sum"></span></summary>
+          <div id="edict-body" class="acc-body"></div>
+        </details>
       </aside>
     </div>
   </div>

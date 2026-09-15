@@ -49,7 +49,7 @@ Key rules:
 - Tiles are drawn as irregular polygons (every grid vertex is displaced by seeded noise), so the world reads as an organic mosaic; hit-testing follows the real shapes.
 - **Win** by holding half of all claimed land, being the last nation standing, or top score at the turn limit.
 
-**Playing a turn:** use the quick actions in the sidebar (Expand, Village, Improve, Road, Castle, Conquer) — each one lights up every valid tile on the map and dims the rest; click one to act. Or click any tile to inspect it and pick from its panel, which shows costs and the yield each improvement would give. The **Last turn** panel summarises what happened to you; hatched tiles are yours but idle (no settlement within 2).
+**Playing a turn:** use the quick actions in the sidebar (Expand, Village, Improve, Road, Castle, Conquer) — each one lights up every valid tile on the map and dims the rest; click one to act. Or click any tile to inspect it and pick from its panel, which shows costs and the yield each improvement would give. The drawer at the bottom of the map has two tabs — **Since your last move** (what happened to you) and the full **Chronicle** — and collapses to a one-line summary. Your nation, Edicts and Other nations are collapsible sections in the sidebar; Standings sits in the map's top-right corner; the Legend (L) shows the actual sprites. Open/closed states are remembered. Hatched tiles are yours but idle (no settlement within 2).
 
 Controls: drag / WASD / arrows to pan, scroll to zoom, `Space` to wait, `C` capital, `L` legend, `G` grid, `H` help, `Esc` cancel.
 

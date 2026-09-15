@@ -1,6 +1,7 @@
 // Entry point: wire up buttons and show the setup screen.
 window.addEventListener('DOMContentLoaded', () => {
   initSetup();
+  initPanels();
 
   $('btn-wait').onclick = () => playerAction('wait');
   $('btn-center').onclick = centerOnHome;
