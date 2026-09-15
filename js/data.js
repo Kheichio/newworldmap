@@ -1,6 +1,14 @@
 ﻿// Static game data: terrain, resources, nations, traits, costs, name generators.
 
-const GAME_VERSION = '0.1.0';
+const GAME_VERSION = '0.2.0';
+
+// Difficulty: AI hand size and income, AI starting stock, player contentment offset, harmful-event scaling, score multiplier.
+const DIFFICULTY = {
+  gentle: { name: 'Gentle', aiHand: 4, aiIncome: 0.85, aiStart: 0.75, mood: 10, harm: 0.5, score: 0.8,  desc: 'Rivals draw fewer cards and earn less; calamities spare you half the time.' },
+  fair:   { name: 'Fair',   aiHand: 6, aiIncome: 1.0,  aiStart: 1.0,  mood: 0,  harm: 1.0, score: 1.0,  desc: 'Everyone plays by the same rules.' },
+  hard:   { name: 'Hard',   aiHand: 7, aiIncome: 1.15, aiStart: 1.5,  mood: -5, harm: 1.0, score: 1.25, desc: 'Rivals hold more cards and earn 15% more.' },
+  brutal: { name: 'Brutal', aiHand: 8, aiIncome: 1.3,  aiStart: 2.0,  mood: -10, harm: 1.5, score: 1.5, desc: 'Rivals hold 8 cards, earn 30% more and start rich; calamities hit you harder.' },
+};
 
 const TERRAINS = {
   ocean:     { name: 'Ocean',     color: '#1d4e79', water: true, food: 0, mat: 0, gold: 0 },
@@ -143,6 +151,28 @@ const CARDS = {
   sanctuary: { name: 'Sanctuary',    icon: '⛪', reaction: true, weight: 0.5, desc: 'While armed: the next plague, famine, bandit raid or storm to strike you is prevented.',            nation: ['agrarian'], leader: ['pious', 'beloved'] },
   bribe:     { name: 'Bribe',        icon: '💰', reaction: true, weight: 0.4, desc: 'While armed: the next war declared on you is cancelled (the aggressor keeps the peace).',          nation: ['mercantile'], leader: ['cunning', 'frugal'] },
   ambush:    { name: 'Ambush',       icon: '🪤', reaction: true, weight: 0.5, desc: 'While armed: the next March or Sea Raid against you fails and the attacker still pays.',           nation: ['wanderers', 'martial'], leader: ['warlike', 'stalwart'] },
+  // --- signature cards: one per colour, only ever drawn by that nation ---
+  legion:    { name: 'Legion',         icon: '🦅', action: 'legion',    target: 'tile', weight: 0.8, signature: 'crimson', desc: 'March that storms a settlement outright — no siege needed.',                       nation: [], leader: [] },
+  armada:    { name: 'Armada',         icon: '⛵', action: 'armada',    target: 'tile', weight: 0.8, signature: 'azure',   desc: 'A sea raid that also seizes one neighbouring enemy coastal tile if it can.',       nation: [], leader: [] },
+  granary:   { name: 'Granary',        icon: '🏚️', weight: 0.8, signature: 'emerald', desc: 'No famine can strike you for 10 turns, and +10 growth.',                                                            nation: [], leader: [] },
+  monopoly:  { name: 'Monopoly',       icon: '💹', weight: 0.8, signature: 'amber',   desc: 'Trade routes pay double for 8 turns.',                                                                              nation: [], leader: [] },
+  academy:   { name: 'Academy',        icon: '🎓', weight: 0.7, signature: 'violet',  desc: 'Hold one more card in hand for the rest of the game (up to +2).',                                                 nation: [], leader: [] },
+  guild:     { name: "Masons' Guild",  icon: '🧱', weight: 0.8, signature: 'ivory',   desc: 'Your next castle is free.',                                                                                        nation: [], leader: [] },
+  deepmine:  { name: 'Deep Mine',      icon: '⛏️', action: 'deepmine',  target: 'tile', weight: 0.8, signature: 'onyx',    desc: 'Sink a deep mine on hills or mountains: a mine that yields +3 extra materials.', nation: [], leader: [] },
+  wanderlust: { name: 'Wanderlust',    icon: '🌄', action: 'wanderlust', target: 'tile', weight: 0.8, signature: 'teal',   desc: 'Claim a free border tile and up to two of its free neighbours for one expansion cost.', nation: [], leader: [] },
+  // --- dilemma cards: free, no action; you choose one of two outcomes ---
+  refugees:  { name: 'Refugees',       icon: '🧳', dilemma: true, weight: 0.3, desc: 'A column of refugees arrives at your border.', nation: [], leader: [],
+    options: [{ label: 'Take them in', desc: '+1 person in your smallest settlement and +20 growth, but −10 contentment for 10 turns.' }, { label: 'Turn them away', desc: '+5 relations with every nation.' }] },
+  prophet:   { name: 'Prophet',        icon: '🕯️', dilemma: true, weight: 0.3, desc: 'A prophet preaches in your capital.', nation: [], leader: ['pious'],
+    options: [{ label: 'Embrace the teaching', desc: '+15 contentment for 10 turns. If you have no faith, this founds one.' }, { label: 'Keep the relics', desc: '+1 relic (+15 score).' }] },
+  dispute:   { name: 'Border Dispute', icon: '📐', dilemma: true, weight: 0.3, desc: 'A neighbour claims a strip of your land.', nation: [], leader: [],
+    options: [{ label: 'Pay them off', desc: '−40 gold.' }, { label: 'Refuse', desc: '−20 relations with your nearest neighbour.' }] },
+  scholars:  { name: 'Wandering Scholars', icon: '📜', dilemma: true, weight: 0.3, desc: 'Scholars offer their services.', nation: ['scholarly'], leader: ['wise'],
+    options: [{ label: 'House them', desc: 'Hold one more card for 10 turns.' }, { label: 'Buy their maps', desc: '+40 materials and the location of ruins is revealed (they glow).' }] },
+  banditking: { name: 'Bandit King',   icon: '🗡️', dilemma: true, weight: 0.3, desc: 'A bandit king demands tribute.', nation: [], leader: ['warlike', 'stalwart'],
+    options: [{ label: 'Pay tribute', desc: '−30 gold.' }, { label: 'Fight', desc: 'With a castle: you win, +10 contentment for 10 turns and +1 relic. Without one: an improvement is burned.' }] },
+  // --- faith ---
+  revelation: { name: 'Revelation',    icon: '🔆', weight: 0.25, desc: 'Found a faith named for your nation (if you have none). Faiths spread along borders and trade routes; nations that share yours grow friendlier, others cooler.', nation: [], leader: ['pious', 'charismatic'] },
   // --- bonus cards (instant, free) ---
   caravan:     { name: 'Caravan',        icon: '🐪', weight: 0.6, desc: 'Gain 15 gold, plus 2 per settlement.',                           nation: ['mercantile'],              leader: ['frugal', 'cunning'] },
   taxes:       { name: 'Tax Collectors', icon: '🪙', weight: 0.5, desc: 'Gain 3 gold per settlement.',                                     nation: ['mercantile', 'scholarly'], leader: ['frugal'] },
@@ -156,13 +186,30 @@ const CARDS = {
 const CARD_FOR_ACTION = {};
 for (const id in CARDS) if (CARDS[id].action) CARD_FOR_ACTION[CARDS[id].action] = id;
 
+// Combos: a card played after another this turn gets a bonus. `after` is a card id (or list).
+const COMBOS = [
+  { card: 'road',      after: ['settle', 'colonists'], effect: 'road_free',   desc: 'after Settlers: the road is free' },
+  { card: 'farm',      after: ['expand', 'wanderlust'], effect: 'improve_half', desc: 'after Expansion: half cost' },
+  { card: 'mine',      after: ['expand', 'wanderlust'], effect: 'improve_half', desc: 'after Expansion: half cost' },
+  { card: 'lumber',    after: ['expand', 'wanderlust'], effect: 'improve_half', desc: 'after Expansion: half cost' },
+  { card: 'pasture',   after: ['expand', 'wanderlust'], effect: 'improve_half', desc: 'after Expansion: half cost' },
+  { card: 'fishery',   after: ['expand', 'wanderlust'], effect: 'improve_half', desc: 'after Expansion: half cost' },
+  { card: 'march',     after: ['war'],                 effect: 'attack_2',     desc: 'after Casus Belli: +2 attack this turn' },
+  { card: 'trade',     after: ['envoys'],              effect: 'trade_free',   desc: 'after Envoys: the route is free' },
+  { card: 'greatwork', after: ['prospectors'],         effect: 'work_half',    desc: 'after Prospectors: half cost' },
+  { card: 'charter',   after: ['migrants', 'bumper'],  effect: 'upgrade_30',   desc: 'after Migrants or Bumper Crop: 30% off' },
+  { card: 'castle',    after: ['road'],                effect: 'castle_25',    desc: 'after Road Builders: 25% off' },
+];
+const COMBO_FOR = {};
+for (const c of COMBOS) (COMBO_FOR[c.card] = COMBO_FOR[c.card] || []).push(c);
+
 // Card market: buy a random card from a category (gold, no action).
 const MARKET = {
   build:     { name: 'Builders\' guild', icon: '🔨', ids: ['farm', 'mine', 'lumber', 'pasture', 'fishery', 'road', 'castle', 'harbor', 'greatwork'] },
   growth:    { name: 'Land office',      icon: '🗺️', ids: ['expand', 'settle', 'charter', 'colonists'] },
-  diplomacy: { name: 'Embassy',          icon: '🕊️', ids: ['trade', 'treaty', 'alliance', 'edict', 'envoys', 'marriage'] },
+  diplomacy: { name: 'Embassy',          icon: '🕊️', ids: ['trade', 'treaty', 'alliance', 'edict', 'envoys', 'marriage', 'revelation'] },
   war:       { name: 'War council',      icon: '⚔️', ids: ['war', 'march', 'raid', 'militia', 'ambush', 'mercenaries'] },
-  fortune:   { name: 'Fortune teller',   icon: '🔮', ids: ['caravan', 'taxes', 'prospectors', 'bumper', 'migrants', 'festival', 'rally', 'sanctuary', 'bribe'] },
+  fortune:   { name: 'Fortune teller',   icon: '🔮', ids: ['caravan', 'taxes', 'prospectors', 'bumper', 'migrants', 'festival', 'rally', 'sanctuary', 'bribe', 'refugees', 'prophet', 'scholars'] },
 };
 const MARKET_BASE_COST = 20, MARKET_PER_TURN = 2;
 
@@ -190,6 +237,11 @@ const UNLOCKS = {
 
 // Contentment: 50 baseline, +8 per worked luxury (partners' luxuries count half), minus sprawl and war.
 const LUXURY_BONUS = 8;
+
+// Faith: founded by the Great Temple, a Prophet or a Revelation; spreads along borders (FAITH_SPREAD) and
+// trade routes (double). Shared faith warms relations; different faiths cool them.
+const FAITH_SPREAD = 0.05;
+const FAITH_NAMES = ['Way', 'Creed', 'Path', 'Covenant', 'Light', 'Rite', 'Order', 'Word'];
 
 const COSTS = {
   village: { mat: 60, gold: 15 },

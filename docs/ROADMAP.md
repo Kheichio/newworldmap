@@ -1,6 +1,8 @@
 # Roadmap — presentation & longevity (items 18–24)
 
-These are specified but not yet built. Each entry lists the intent, the design, the touch points in the code, and open questions. Effort is a rough guide: S = an hour or two, M = an evening, L = a weekend.
+**Status (v0.2.0):** 18 (animated map: two-frame water/river cache, smoke, flag flutter, Motion toggle) and 20 (generative lo-fi music with its own volume) are built; 22 (difficulty levels) is built. 19, 21, 23 and 24 remain as specified below.
+
+These were specified before being built. Each entry lists the intent, the design, the touch points in the code, and open questions. Effort is a rough guide: S = an hour or two, M = an evening, L = a weekend.
 
 ---
 

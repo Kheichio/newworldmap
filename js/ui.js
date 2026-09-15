@@ -95,14 +95,12 @@ function initSetup() {
   const rng = new RNG(Date.now());
   $('in-nation').value = genNationName(rng);
   $('in-leader').value = genLeaderName(rng);
-  $('btn-random-names').onclick = () => {
-    const r = new RNG(Date.now() + Math.random() * 1e6);
-    $('in-nation').value = genNationName(r);
-    $('in-leader').value = genLeaderName(r);
-    updateTraitPreview();
-  };
-  $('in-nation').oninput = updateTraitPreview;
-  $('btn-reflag-setup').onclick = () => { UI.setupFlagSeed = (UI.setupFlagSeed || 0) + 1; updateTraitPreview(); };
+  const fresh = () => new RNG(Date.now() + Math.random() * 1e6);
+  $('btn-random-nation').onclick = () => { $('in-nation').value = genNationName(fresh()); };
+  $('btn-random-leader').onclick = () => { $('in-leader').value = genLeaderName(fresh()); };
+  // the flag has its own seed: names never change it, only "New flag" does
+  UI.setupFlagSeed = fresh().int(0, 1e9);
+  $('btn-reflag-setup').onclick = () => { UI.setupFlagSeed = fresh().int(0, 1e9); updateTraitPreview(); };
   $('version-tag').textContent = 'v' + GAME_VERSION;
   $('version-setup').textContent = 'v' + GAME_VERSION;
   const picker = $('color-picker');
@@ -123,6 +121,9 @@ function initSetup() {
   lt.innerHTML = '<option value="">Random</option>' + Object.entries(LEADER_TRAITS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
   lt.onchange = updateTraitPreview;
   $('in-type').innerHTML = Object.entries(MAP_TYPES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+  $('in-diff').innerHTML = Object.entries(DIFFICULTY).map(([k, v]) => `<option value="${k}" ${k === 'fair' ? 'selected' : ''} title="${esc(v.desc)}">${v.name}</option>`).join('');
+  $('in-diff').value = load('difficulty', 'fair');
+  $('in-diff').onchange = () => { store('difficulty', $('in-diff').value); updateTraitPreview(); };
   $('in-size').innerHTML = Object.entries(MAP_SIZES).map(([k, v]) => `<option value="${k}" ${k === 'small' ? 'selected' : ''}>${v.name}</option>`).join('');
   updateTraitPreview();
   renderUnlocks();
@@ -137,10 +138,12 @@ function updateTraitPreview() {
   const T = NATION_TRAITS[c.trait];
   const lk = $('in-ltrait').value;
   const L = lk ? LEADER_TRAITS[lk] : null;
-  $('trait-preview').innerHTML = `<div class="trait"><b>${c.name} — ${T.name}:</b> ${T.desc}</div><div class="trait"><b>Leader — ${L ? L.name : 'random trait'}:</b> ${L ? L.desc : 'Your leader receives a random trait when the nation is founded.'}</div>`;
+  const sig = Object.values(CARDS).find(x => x.signature === c.id);
+  const D = DIFFICULTY[$('in-diff').value] || DIFFICULTY.fair;
+  $('trait-preview').innerHTML = `<div class="trait"><b>${c.name} — ${T.name}:</b> ${T.desc}</div><div class="trait"><b>Leader — ${L ? L.name : 'random trait'}:</b> ${L ? L.desc : 'Your leader receives a random trait when the nation is founded.'}</div>${sig ? `<div class="trait"><b>Signature card — ${sig.icon} ${sig.name}:</b> ${sig.desc}</div>` : ''}<div class="trait"><b>${D.name}:</b> ${D.desc} Score ×${D.score}.</div>`;
   const fp = $('flag-preview');
   fp.innerHTML = '';
-  fp.appendChild(makeFlag({ name: $('in-nation').value.trim() || 'My Nation', colorId: c.id, color: c.hex, flagSeed: UI.setupFlagSeed || 0 }));
+  fp.appendChild(makeFlag({ colorId: c.id, color: c.hex, flagSeed: UI.setupFlagSeed || 0 }));
 }
 
 function startGame() {
@@ -155,6 +158,7 @@ function startGame() {
     aiCount: parseInt($('in-ai').value, 10),
     maxTurns: Math.max(30, Math.min(500, parseInt($('in-turns').value, 10) || 150)),
     unlocked: UI.profile.unlocked,
+    difficulty: $('in-diff').value,
   });
   const player = game.nations[0];
   player.flagSeed = UI.setupFlagSeed || 0;
@@ -180,7 +184,11 @@ function beginGame(game, ui) {
   selectTile(null);
   refreshAll();
   saveGame();
+  if (UI.musicOn) Music.start();
+  updateMood();
 }
+
+function updateMood() { if (UI.game && UI.player) Music.setMood(UI.game.enemies(UI.player).length ? 'war' : 'peace'); }
 
 // ---------------- Map ----------------
 function initMap() {
@@ -196,6 +204,7 @@ function initMap() {
     UI.renderer.setGame(UI.game);
   }
   UI.renderer.player = UI.player;
+  UI.renderer.animate = UI.motion !== false;
   resizeCanvas();
   initLegend();
 }
@@ -232,7 +241,13 @@ function resizeCanvas() {
   UI.needsDraw = true;
 }
 
-function frame() {
+function frame(now) {
+  // ambient animation: flip the terrain frame / advance smoke about 1.4× per second when enabled and visible
+  if (UI.renderer && UI.renderer.animate && !document.hidden && UI.game && (!UI.lastAnim || now - UI.lastAnim > 700)) {
+    UI.lastAnim = now;
+    UI.renderer.animFrame = UI.renderer.animFrame ? 0 : 1;
+    UI.needsDraw = true;
+  }
   if (UI.needsDraw && UI.renderer && UI.game) { UI.renderer.draw(); UI.needsDraw = false; }
   requestAnimationFrame(frame);
 }
@@ -308,13 +323,13 @@ function mapClick(t) {
 function validTargets(action) {
   const g = UI.game, p = UI.player, set = new Set();
   let cands;
-  if (action === 'colonize' || action === 'raid') {
+  if (action === 'colonize' || action === 'raid' || action === 'armada') {
     cands = [];
     const seen = new Set();
     for (const i of p.settlements) if (g.tiles[i].harbor) for (const t of g.ring(g.tiles[i], 6)) if (!seen.has(t.i)) { seen.add(t.i); cands.push(t); }
   } else {
     cands = Array.from(p.owned, i => g.tiles[i]);
-    if (['expand', 'conquer', 'village'].includes(action)) {
+    if (['expand', 'conquer', 'village', 'legion', 'wanderlust'].includes(action)) {
       const seen = new Set(p.owned);
       for (const i of p.owned) for (const nb of g.neighbors(g.tiles[i])) if (!seen.has(nb.i)) { seen.add(nb.i); cands.push(nb); }
     }
@@ -355,6 +370,7 @@ function beginPlay(idx) {
   if (!id) return;
   const c = CARDS[id];
   if (g.over && !g.continued) { $('gameover').classList.remove('hidden'); return; }
+  if (c.dilemma) { openDilemma(idx); return; }
   if (c.reaction || !c.action) { playCardFlow(idx, null, null); return; }
   if (p.ap <= 0) { toast('No actions left this turn — end your turn first (Space).', true); Sound.play('error'); return; }
   if (c.target === 'tile') {
@@ -453,6 +469,45 @@ function openPicker(idx) {
 }
 function closePicker() { $('picker').classList.add('hidden'); }
 
+// Dilemma cards: choose one of two outcomes (free).
+function openDilemma(idx) {
+  const p = UI.player, c = CARDS[p.hand[idx]];
+  $('picker-title').innerHTML = `${c.icon} ${esc(c.name)} — ${esc(c.desc)}`;
+  $('picker-body').innerHTML = c.options.map((o, i) => `<button class="action pick${i === 0 ? ' gold' : ''}" data-opt="${i}"><span class="al">${esc(o.label)}</span><span class="sub">${esc(o.desc)}</span></button>`).join('');
+  for (const b of $('picker-body').querySelectorAll('button[data-opt]')) b.onclick = () => { closePicker(); playCardFlow(idx, null, null, parseInt(b.dataset.opt, 10)); };
+  $('picker').classList.remove('hidden');
+  $('picker-close').onclick = closePicker;
+  $('picker-close').textContent = '✕ Keep card';
+}
+
+function holdCardUI(idx) {
+  const r = UI.game.holdCard(UI.player, idx);
+  if (!r.ok) { toast(r.why, true); Sound.play('error'); return; }
+  Sound.play('card'); UI.selCard = -1;
+  toast(`${CARDS[r.id].icon} ${CARDS[r.id].name} set aside in the Hold slot — it survives refills until you play it.`);
+  refreshAll(); saveGame();
+}
+function playHeld() {
+  const p = UI.player, g = UI.game;
+  if (!p.held) return;
+  if (p.hand.length >= g.handMax(p)) { toast('Your hand is full — discard a card to bring the held card back.', true); Sound.play('error'); return; }
+  const r = g.unholdCard(p);
+  if (!r.ok) { toast(r.why, true); return; }
+  UI.selCard = p.hand.length - 1;
+  refreshAll(); saveGame();
+  beginPlay(p.hand.length - 1);
+}
+function mulliganUI() {
+  const p = UI.player, g = UI.game;
+  if (p.mulliganUsed) { toast('You have already used your mulligan this game.', true); Sound.play('error'); return; }
+  if (!confirm('Throw away your whole hand and draw a fresh one? This can be done once per game.')) return;
+  const r = g.mulligan(p);
+  if (!r.ok) { toast(r.why, true); return; }
+  UI.newIds = new Set(p.newCards); UI.selCard = -1;
+  Sound.play('draw');
+  refreshAll(); saveGame();
+}
+
 function openMarket() {
   const g = UI.game, p = UI.player;
   const cost = g.marketCost(p);
@@ -482,7 +537,15 @@ function openMarket() {
 function cardHint(id) {
   const g = UI.game, p = UI.player, c = CARDS[id];
   if (c.reaction) return p.armed.includes(id) ? 'already armed' : 'arm for free';
+  if (c.dilemma) return 'choose one of two outcomes';
   if (!c.action) {
+    switch (id) {
+      case 'granary': return p.granaryUntil > g.turn ? `already stocked (${p.granaryUntil - g.turn} turns)` : 'no famine for 10 turns';
+      case 'monopoly': return p.trades.size ? `${p.trades.size} route${p.trades.size === 1 ? '' : 's'} pay double` : 'no trade routes yet';
+      case 'academy': return p.handBonus >= 2 ? 'at its height' : `hand size ${g.handMax(p)} → ${g.handMax(p) + 1}`;
+      case 'guild': return p.freeCastle ? 'already granted' : 'next castle free';
+      case 'revelation': return p.faith === null ? `founds the ${g.faithName(p)}` : 'you already have a faith';
+    }
     const setts = p.settlements.length, boost = 1 + 0.25 * g.masteryTier(p, id);
     switch (id) {
       case 'caravan': return `+${Math.round((15 + 2 * setts) * boost)} gold`;
@@ -519,20 +582,34 @@ function cardHint(id) {
 
 function renderTray() {
   const g = UI.game, p = UI.player;
-  const hand = $('hand'), note = $('tray-note'), armed = $('armed');
-  note.innerHTML = `${p.hand.length} / ${g.handMax(p)} cards · <b>${p.ap}</b> action${p.ap === 1 ? '' : 's'} left · click a card to play, keep or discard it`;
+  const hand = $('hand'), note = $('tray-note'), armed = $('armed'), held = $('held');
+  note.innerHTML = `${p.hand.length} / ${g.handMax(p)} cards · <b>${p.ap}</b> action${p.ap === 1 ? '' : 's'} left · click a card to play, keep, hold or discard it`;
+  $('btn-mulligan').disabled = p.mulliganUsed;
+  $('btn-mulligan').title = p.mulliganUsed ? 'Mulligan already used this game' : 'Once per game: throw away your whole hand and draw a fresh one';
   armed.classList.toggle('hidden', !p.armed.length);
   armed.innerHTML = p.armed.length ? `<span class="armed-title">Armed:</span> ${p.armed.map(id => `<span class="armed-card" title="${esc(CARDS[id].desc)}">${CARDS[id].icon} ${esc(CARDS[id].name)}</span>`).join('')}` : '';
+  held.classList.toggle('hidden', !p.held);
+  if (p.held) {
+    const hc = CARDS[p.held];
+    held.innerHTML = `<span class="armed-title">Held:</span> <span class="armed-card" title="${esc(hc.desc)}">${hc.icon} ${esc(hc.name)}</span> <button class="btn small gold" id="btn-play-held">Play</button> <button class="btn small" id="btn-unhold">Return to hand</button>`;
+    $('btn-play-held').onclick = playHeld;
+    $('btn-unhold').onclick = () => { const r = g.unholdCard(p); if (!r.ok) { toast(r.why, true); return; } refreshAll(); saveGame(); };
+  }
   hand.innerHTML = p.hand.map((id, i) => {
     const c = CARDS[id];
-    const affine = c.nation.includes(p.trait) || c.leader.includes(p.leader.trait);
+    const affine = c.nation.includes(p.trait) || c.leader.includes(p.leader.trait) || c.signature === p.colorId;
     const sel = i === UI.selCard;
     const playing = UI.mode && UI.modeCard === i;
     const tier = g.masteryTier(p, id), plays = (p.mastery && p.mastery[id]) || 0;
     const nextTier = tier < 2 ? MASTERY_TIERS[tier] : null;
+    const combo = g.comboFor(p, id);
+    const comboList = COMBO_FOR[id];
     let cost = '';
     if (c.action) {
-      if (c.action === 'expand') cost = `🪙${g.expandCost(p).gold}`;
+      if (c.action === 'expand' || c.action === 'wanderlust') cost = `🪙${g.expandCost(p).gold}`;
+      else if (c.action === 'legion') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer') * 1.2));
+      else if (c.action === 'armada') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer') * 0.8));
+      else if (c.action === 'deepmine') cost = costHtml(g.scaleCost(IMPROVEMENTS.mine.cost, g.costMul(p, 'improve') * 1.5));
       else if (c.action === 'village') cost = costHtml(g.scaleCost(COSTS.village, g.costMul(p, 'village')));
       else if (c.action === 'colonize') cost = costHtml(g.scaleCost(COSTS.village, g.costMul(p, 'village') * 1.25));
       else if (c.action === 'castle') cost = costHtml(g.scaleCost(COSTS.castle, g.costMul(p, 'castle')));
@@ -540,28 +617,31 @@ function renderTray() {
       else if (c.action === 'harbor') cost = costHtml(g.scaleCost(COSTS.harbor, g.costMul(p, 'harbor')));
       else if (c.action === 'conquer') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer')));
       else if (c.action === 'raid') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer') * 0.6));
-      else if (c.action === 'greatwork') cost = costHtml(g.scaleCost({ mat: 50 }, 1 + p.owned.size / 100));
-      else if (IMPROVEMENTS[c.action]) cost = costHtml(g.scaleCost(IMPROVEMENTS[c.action].cost, g.costMul(p, 'improve') * (1 - 0.12 * tier)));
+      else if (c.action === 'greatwork') cost = costHtml(g.scaleCost({ mat: 50 }, (1 + p.owned.size / 100) * (combo ? 0.5 : 1)));
+      else if (IMPROVEMENTS[c.action]) cost = costHtml(g.scaleCost(IMPROVEMENTS[c.action].cost, g.costMul(p, 'improve') * (1 - 0.12 * tier) * (combo ? 0.5 : 1)));
       else if (c.action === 'upgrade') cost = 'varies';
-      else if (c.action === 'trade') cost = costHtml(COSTS.trade);
+      else if (c.action === 'trade') cost = costHtml(combo ? {} : COSTS.trade);
       else if (c.action === 'peace') cost = costHtml(COSTS.peace);
       else if (c.action === 'edict') cost = costHtml(g.scaleCost(COSTS.edict, 1 + p.owned.size / 100));
       else cost = 'free';
     }
     const hint = cardHint(id);
-    const tip = `${c.desc}${affine ? ' Favoured by your traits.' : ''}${hint ? ' Now: ' + hint + '.' : ''} Mastery: ${plays} play${plays === 1 ? '' : 's'}${nextTier ? `, tier ${tier + 1} at ${nextTier}` : ' (max)'}.`;
-    const kind = c.reaction ? 'reaction · free' : c.action ? 'action' : 'bonus · free';
-    return `<div class="card${sel ? ' sel' : ''}${playing ? ' playing' : ''}${affine ? ' affine' : ''}${UI.newIds.has(id) ? ' new' : ''}${c.reaction ? ' reaction' : c.action ? '' : ' bonus'}" data-idx="${i}" title="${esc(tip)}">
+    const comboTxt = combo ? `Combo ready — ${combo.desc}` : comboList ? `Combo: ${comboList.map(x => x.desc).join('; ')}` : '';
+    const tip = `${c.desc}${affine ? (c.signature ? ' Your signature card.' : ' Favoured by your traits.') : ''}${hint ? ' Now: ' + hint + '.' : ''}${comboTxt ? ' ' + comboTxt + '.' : ''} Mastery: ${plays} play${plays === 1 ? '' : 's'}${nextTier ? `, tier ${tier + 1} at ${nextTier}` : ' (max)'}.`;
+    const kind = c.reaction ? 'reaction · free' : c.dilemma ? 'dilemma · free' : c.signature ? 'signature' : c.action ? 'action' : 'bonus · free';
+    const cls = c.reaction ? ' reaction' : c.dilemma ? ' dilemma' : c.signature ? ' signature' : c.action ? '' : ' bonus';
+    return `<div class="card${sel ? ' sel' : ''}${playing ? ' playing' : ''}${affine ? ' affine' : ''}${UI.newIds.has(id) ? ' new' : ''}${combo ? ' combo' : ''}${cls}" data-idx="${i}" title="${esc(tip)}">
       <span class="ck">${kind}</span>${tier ? `<span class="tier">${'★'.repeat(tier)}</span>` : ''}
       <span class="ci">${c.icon}</span><span class="cn">${esc(c.name)}</span><span class="cd">${esc(c.desc)}</span>
-      ${hint ? `<span class="ch">${esc(hint)}</span>` : ''}
+      ${combo ? `<span class="cb">⚡ ${esc(combo.desc)}</span>` : hint ? `<span class="ch">${esc(hint)}</span>` : ''}
       ${cost ? `<span class="cc">${cost}</span>` : ''}
-      ${sel ? `<div class="card-actions"><button class="btn small gold" data-play="${i}">${c.reaction ? 'Arm' : c.action ? (c.target === 'tile' ? 'Play — choose tile' : 'Play — choose') : 'Play now'}</button><button class="btn small" data-keep="${i}">Keep</button><button class="btn small" data-discard="${i}">Discard</button></div>` : ''}
+      ${sel ? `<div class="card-actions"><button class="btn small gold" data-play="${i}">${c.reaction ? 'Arm' : c.dilemma ? 'Decide' : c.action ? (c.target === 'tile' ? 'Play — choose tile' : 'Play — choose') : 'Play now'}</button><button class="btn small" data-keep="${i}">Keep</button><button class="btn small" data-hold="${i}" ${p.held ? 'disabled' : ''} title="Set aside outside your hand until you play it">Hold</button><button class="btn small" data-discard="${i}">Discard</button></div>` : ''}
     </div>`;
   }).join('') || '<div class="empty">Your hand is empty — new cards arrive next turn.</div>';
   for (const el of hand.querySelectorAll('.card')) el.onclick = e => { if (e.target.closest('button')) return; selectCard(parseInt(el.dataset.idx, 10)); };
   for (const b of hand.querySelectorAll('button[data-play]')) b.onclick = e => { e.stopPropagation(); beginPlay(parseInt(b.dataset.play, 10)); };
   for (const b of hand.querySelectorAll('button[data-keep]')) b.onclick = e => { e.stopPropagation(); selectCard(-1); };
+  for (const b of hand.querySelectorAll('button[data-hold]')) b.onclick = e => { e.stopPropagation(); holdCardUI(parseInt(b.dataset.hold, 10)); };
   for (const b of hand.querySelectorAll('button[data-discard]')) b.onclick = e => { e.stopPropagation(); discardCard(parseInt(b.dataset.discard, 10)); };
 }
 
@@ -588,8 +668,9 @@ function endTurn() {
   checkMilestones();
   refreshAll();
   saveGame();
+  updateMood();
   if (!g.over) {
-    Sound.play('turn');
+    if (UI.report.some(e => /completes the/.test(e.msg))) Sound.play('fanfare'); else Sound.play('turn');
     if (UI.report.some(e => e.kind === 'bad')) setTimeout(() => Sound.play('bad'), 350);
     else if (UI.report.some(e => e.kind === 'event')) setTimeout(() => Sound.play('event'), 350);
     if (UI.newIds.size) setTimeout(() => Sound.play('draw'), 700);
@@ -647,7 +728,7 @@ function buildReport(logStart, before) {
     else if (/declares war on|lays siege/.test(m)) kind = m.startsWith(p.name) ? 'neutral' : 'bad';
     else if (/conquers|seizes|fallen|rises up|is ambushed/.test(m)) kind = m.startsWith(p.name) ? (/is ambushed/.test(m) ? 'bad' : 'good') : 'bad';
     else if (/Famine|Plague|Bandits|tribute/.test(m)) kind = 'bad';
-    else if (/grows|borders|ruins|peace|pact|completes|answers|averted|passes them by|bought off|springs/.test(m)) kind = 'good';
+    else if (/grows|borders|ruins|peace|pact|completes|answers|averted|passes them by|bought off|springs|founds the|embraces/.test(m)) kind = 'good';
     else if (/trade route|Plunder|buys/.test(m)) kind = 'gold';
     ev.push({ kind, msg: m, tile: locateMessage(m) });
   }
@@ -764,7 +845,7 @@ function renderTilePanel() {
       const prev = t.improvement; t.improvement = c.action; const after = g.tileYield(t, p); t.improvement = prev;
       sub = `<span class="sub">Yield becomes ${yieldStr(after)}${chk.why ? ' · ' + esc(chk.why) : ''}</span>`;
     }
-    items += `<button class="action${['conquer', 'raid'].includes(c.action) ? ' danger' : ''}" data-play="${idx}" ${chk.ok && p.ap > 0 ? '' : 'disabled'}><span class="al">${c.icon} ${esc(c.name)} — ${esc(chk.label)}</span><span class="cost">${costHtml(chk.cost)}</span>${sub}</button>`;
+    items += `<button class="action${['conquer', 'raid', 'legion', 'armada'].includes(c.action) ? ' danger' : ''}" data-play="${idx}" ${chk.ok && p.ap > 0 ? '' : 'disabled'}><span class="al">${c.icon} ${esc(c.name)} — ${esc(chk.label)}</span><span class="cost">${costHtml(chk.cost)}</span>${sub}</button>`;
   });
   html += `<div class="group-title">Cards you can play here</div><div class="actions">${items || '<div class="empty">None of the cards in your hand apply to this tile.</div>'}</div>`;
   panel.innerHTML = html;
@@ -776,9 +857,10 @@ function isIrrelevant(action, t) {
   const mine = t.owner === p.id;
   const enemy = t.owner !== null && !mine;
   switch (action) {
-    case 'expand': return t.owner !== null || t.terrain === 'ocean' || !g.isFrontier(p, t);
-    case 'conquer': return !enemy || !g.isFrontier(p, t);
-    case 'raid': return !enemy || !(t.coastal || t.water) || !g.nearHarbor(p, t, 6);
+    case 'expand': case 'wanderlust': return t.owner !== null || t.terrain === 'ocean' || !g.isFrontier(p, t);
+    case 'conquer': case 'legion': return !enemy || !g.isFrontier(p, t);
+    case 'raid': case 'armada': return !enemy || !(t.coastal || t.water) || !g.nearHarbor(p, t, 6);
+    case 'deepmine': return !mine || (t.terrain !== 'hills' && t.terrain !== 'mountains') || !!t.settlement || t.castle || !!t.deep;
     case 'colonize': return t.owner !== null || t.water || !t.coastal || !!t.settlement || !g.nearHarbor(p, t, 6);
     case 'village': return t.water || t.terrain === 'mountains' || !!t.settlement || (!mine && !(t.owner === null && g.isFrontier(p, t)));
     case 'upgrade': return !t.settlement || !mine || !SETTLEMENTS[t.settlement.type].next;
@@ -843,13 +925,14 @@ function renderNationPanel() {
   $('nation-sum').textContent = `${T.name} · ${L.name} · score ${g.score(p)}`;
   $('nation-body').innerHTML = `
     <div class="nation-head">${flagImg(p, 'big')}
-      <div><div class="nation-name">${esc(p.name)}</div><div class="nation-leader">${esc(p.leader.name)} · ${p.colorName} nation${p.alive ? '' : ' · <span class="neg">fallen</span>'}${p.vassalOf !== null ? ` · pays tribute to ${esc(g.nation(p.vassalOf).name)} until turn ${p.vassalUntil}` : ''}</div></div>
-      <button id="btn-reflag" class="btn small" title="Draw a new flag design">↻ Flag</button></div>
+      <div><div class="nation-name">${esc(p.name)}</div><div class="nation-leader">${esc(p.leader.name)} · ${p.colorName} nation${p.alive ? '' : ' · <span class="neg">fallen</span>'}${p.vassalOf !== null ? ` · pays tribute to ${esc(g.nation(p.vassalOf).name)} until turn ${p.vassalUntil}` : ''}</div></div></div>
     <div class="trait"><b>${T.name}</b> — ${T.desc}</div>
     <div class="trait"><b>${L.name} leader</b> — ${L.desc}</div>
     <div class="trait"><b>Edict</b> — ${p.edict ? `${EDICTS[p.edict].icon} ${EDICTS[p.edict].name}, ${Math.max(0, p.edictUntil - g.turn)} more turn${p.edictUntil - g.turn === 1 ? '' : 's'}: ${EDICTS[p.edict].desc}` : 'none in force. Play a Proclamation card to declare one.'}</div>
     <div class="trait"><b>Wonders</b> — ${p.wonders.length ? p.wonders.map(w => `${WONDERS[w].icon} ${WONDERS[w].name}`).join(', ') : 'none'}${p.wonderId ? ` · building ${WONDERS[p.wonderId].icon} ${WONDERS[p.wonderId].name} (${p.wonderProgress}/${WONDER_STEPS})` : ''}</div>
     <div class="trait"><b>Mastery</b> — ${mastered.length ? mastered.join(', ') : 'play a card 5 times to master it (★), 12 for ★★'}</div>
+    <div class="trait"><b>Faith</b> — ${p.faith !== null && g.faiths[p.faith] ? `${esc(g.faiths[p.faith].name)}${g.faiths[p.faith].founder === p.id ? ' (founded by you)' : ''} · ${g.followers(p.faith).length} nation${g.followers(p.faith).length === 1 ? '' : 's'}` : 'none. The Great Temple, a Prophet or a Revelation founds one.'}</div>
+    <div class="trait"><b>Difficulty</b> — ${DIFFICULTY[g.difficulty].name} (score ×${DIFFICULTY[g.difficulty].score})</div>
     <div class="stats" style="margin-top:10px">
       <span>Growth</span><span>${Math.floor(p.growth)} / ${need} <span class="note">next citizen · ×${(0.6 + p.contentment / 125).toFixed(2)} from contentment</span><div class="bar"><div style="width:${pct}%"></div></div></span>
       <span>Territory</span><span>${p.owned.size} tiles · ${Math.round(g.claimedShare(p) * 100)}% of all claimed land</span>
@@ -858,7 +941,6 @@ function renderNationPanel() {
       <span>Trade</span><span>${p.trades.size} route${p.trades.size === 1 ? '' : 's'} · ${g.allies(p).length} all${g.allies(p).length === 1 ? 'y' : 'ies'}</span>
       <span>Relics</span><span>${p.relics}</span>
     </div>`;
-  $('btn-reflag').onclick = () => { p.flagSeed = (p.flagSeed || 0) + 1; makeFlag(p); initLegend(); Sound.play('card'); refreshAll(); saveGame(); };
 }
 
 function renderDiploPanel() {
@@ -897,7 +979,7 @@ function renderDiploPanel() {
     html += `<div class="nation-row${n.alive ? '' : ' dead'}">
       <span class="swatch" style="background:${n.color}"></span>
       <div><div class="nm">${flagImg(n)} ${esc(n.name)} <span class="note">· ${n.colorName}</span></div>
-        <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}${n.edict ? ` · ${EDICTS[n.edict].icon} ${EDICTS[n.edict].name}` : ''}${n.wonders.length ? ' · ' + n.wonders.map(w => WONDERS[w].icon).join('') : ''}</div>
+        <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}${n.edict ? ` · ${EDICTS[n.edict].icon} ${EDICTS[n.edict].name}` : ''}${n.wonders.length ? ' · ' + n.wonders.map(w => WONDERS[w].icon).join('') : ''}${n.faith !== null && g.faiths[n.faith] ? ` · 🔆 ${esc(g.faiths[n.faith].name)}${p.faith === n.faith ? ' (shared)' : ''}` : ''}</div>
         <div class="sub">${n.alive ? `${n.owned.size} tiles · ${n.settlements.length} settlements · attack ${g.attackStrength(n)} · score ${g.score(n)}${allies.length ? ' · allies: ' + allies.join(', ') : ''}` : 'This nation has fallen.'}</div>
         <div class="sub">${status} · <span class="rel-${relL}">${relL}</span> (${Math.round(rel)})${borders ? ' · shares your border' : ''}${trading ? ` · 🤝 trading, +${g.tradeIncome(p, n)} gold/turn` : ''}</div>
         <div class="sub">Last move: ${esc(n.lastAction)}</div>
@@ -966,6 +1048,7 @@ function initPanels() {
   st.open = load('standings', true);
   st.addEventListener('toggle', () => store('standings', st.open));
   $('btn-market').onclick = openMarket;
+  $('btn-mulligan').onclick = mulliganUI;
   initSound();
 }
 
@@ -979,7 +1062,22 @@ function initSound() {
   vol.onchange = () => Sound.play('select');
   mute.onclick = () => { Sound.setMuted(!Sound.muted); store('muted', Sound.muted); refresh(); };
   refresh();
-  const wake = () => { Sound.init(); Sound.resume(); };
+  // music
+  Music.volume = load('music', 0.35);
+  UI.musicOn = load('musicOn', true);
+  const mvol = $('mvol'), mbtn = $('btn-music');
+  mvol.value = Math.round(Music.volume * 100);
+  const mrefresh = () => { mbtn.textContent = UI.musicOn ? '🎵' : '🎵̸'; mbtn.title = UI.musicOn ? 'Music off' : 'Music on'; mbtn.style.opacity = UI.musicOn ? '1' : '0.5'; };
+  mvol.oninput = () => { Music.setVolume(mvol.value / 100); store('music', Music.volume); };
+  mbtn.onclick = () => { UI.musicOn = !UI.musicOn; store('musicOn', UI.musicOn); if (UI.musicOn && UI.game) Music.start(); else Music.stop(); mrefresh(); };
+  mrefresh();
+  // motion (ambient animation)
+  const motion = $('btn-motion');
+  UI.motion = load('motion', true);
+  const motionRefresh = () => { motion.style.opacity = UI.motion ? '1' : '0.5'; motion.title = UI.motion ? 'Animation on — click to turn off' : 'Animation off — click to turn on'; if (UI.renderer) UI.renderer.animate = UI.motion; UI.needsDraw = true; };
+  motion.onclick = () => { UI.motion = !UI.motion; store('motion', UI.motion); motionRefresh(); };
+  motionRefresh();
+  const wake = () => { Sound.init(); Sound.resume(); if (UI.musicOn && UI.game && !Music.playing) Music.start(); };
   document.addEventListener('pointerdown', wake, { passive: true });
   document.addEventListener('keydown', wake);
 }

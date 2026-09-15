@@ -171,6 +171,9 @@ class Renderer {
     this.highlight = null; // Set of tile indices that are valid targets in targeting mode
     this.player = null;    // nation whose idle land gets hatched
     this.showGrid = false;
+    this.animate = true;   // water shimmer, river flow, smoke, flag flutter
+    this.animFrame = 0;
+    this.smoke = [];
     this.setGame(game);
   }
 
@@ -262,7 +265,14 @@ class Renderer {
   }
 
   // ---------- Terrain cache ----------
+  // Two frames: they differ only in the water shimmer and the river flow, so alternating them animates the map.
   buildTerrainCache() {
+    this.cache = this.renderCacheFrame(0);
+    this.cache2 = this.renderCacheFrame(1);
+    this.animFrame = 0;
+    this.smoke = [];
+  }
+  renderCacheFrame(frame) {
     const { W, H, tiles } = this.game;
     const S = CACHE_PX;
     const c = document.createElement('canvas');
@@ -276,27 +286,45 @@ class Renderer {
       g.beginPath(); this.tracePoly(g, t.i, S, 0, 0); g.clip();
       g.fillStyle = shadeColor(T.color, t.shade * 10);
       g.fillRect(t.x * S - S, t.y * S - S, S * 3, S * 3);
-      this.drawTerrainDetail(g, t, t.x * S, t.y * S, S, rng);
+      this.drawTerrainDetail(g, t, t.x * S, t.y * S, S, rng, frame);
       g.restore();
       // soft seam between tiles for a mosaic feel
       g.beginPath(); this.tracePoly(g, t.i, S, 0, 0);
       g.strokeStyle = t.water ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.13)'; g.lineWidth = 1; g.stroke();
     }
-    // Rivers
-    g.strokeStyle = '#4fa3d8'; g.lineWidth = S * 0.16; g.lineCap = 'round'; g.lineJoin = 'round';
-    for (const t of tiles) {
-      if (!t.river || t.water) continue;
-      const cx = t.x * S + S / 2, cy = t.y * S + S / 2;
-      if (t.riverTo >= 0) {
-        const n = tiles[t.riverTo];
-        g.beginPath(); g.moveTo(cx, cy); g.lineTo(n.x * S + S / 2, n.y * S + S / 2); g.stroke();
+    // Rivers: a solid bed plus a lighter flowing dash whose phase differs per frame
+    for (const pass of [0, 1]) {
+      g.strokeStyle = pass ? '#8fd0f0' : '#4fa3d8'; g.lineWidth = pass ? S * 0.07 : S * 0.16; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.setLineDash(pass ? [S * 0.35, S * 0.45] : []); g.lineDashOffset = pass ? frame * S * 0.4 : 0;
+      for (const t of tiles) {
+        if (!t.river || t.water) continue;
+        const cx = t.x * S + S / 2, cy = t.y * S + S / 2;
+        if (t.riverTo >= 0) {
+          const n = tiles[t.riverTo];
+          g.beginPath(); g.moveTo(cx, cy); g.lineTo(n.x * S + S / 2, n.y * S + S / 2); g.stroke();
+        }
+        if (!pass) { g.fillStyle = '#4fa3d8'; g.beginPath(); g.arc(cx, cy, S * 0.1, 0, Math.PI * 2); g.fill(); }
       }
-      g.fillStyle = '#4fa3d8'; g.beginPath(); g.arc(cx, cy, S * 0.1, 0, Math.PI * 2); g.fill();
     }
-    this.cache = c;
+    g.setLineDash([]);
+    return c;
   }
 
-  drawTerrainDetail(g, t, px, py, S, rng) {
+  // Smoke over towns and cities (only while animating).
+  updateSmoke(x0, y0, x1, y1) {
+    const game = this.game;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const t = game.tiles[y * game.W + x];
+      if (!t.settlement || t.settlement.type === 'village') continue;
+      const want = Math.min(3, 1 + Math.floor(t.settlement.pop / 5));
+      const have = this.smoke.reduce((k, p) => k + (p.tile === t.i ? 1 : 0), 0);
+      if (have < want && this.smoke.length < 200 && Math.random() < 0.35) this.smoke.push({ tile: t.i, x: x + 0.35 + Math.random() * 0.3, y: y + 0.3, age: 0, life: 6 + Math.random() * 4, drift: (Math.random() - 0.5) * 0.04 });
+    }
+    for (const p of this.smoke) { p.age++; p.y -= 0.045; p.x += p.drift; }
+    this.smoke = this.smoke.filter(p => p.age < p.life);
+  }
+
+  drawTerrainDetail(g, t, px, py, S, rng, frame = 0) {
     const T = TERRAINS[t.terrain];
     const dark = shadeColor(T.color, -35), light = shadeColor(T.color, 30);
     const r = () => rng.float();
@@ -346,7 +374,7 @@ class Renderer {
       case 'ocean': case 'coast': case 'lake':
         if (r() < 0.35) {
           g.strokeStyle = light; g.lineWidth = 1 * k;
-          const x = px + (2 + r() * 6) * k, y = py + (3 + r() * 10) * k;
+          const x = px + (2 + r() * 6) * k + frame * 3 * k, y = py + (3 + r() * 10) * k - frame * 1.5 * k;
           g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 2 * k, y - 2 * k, x + 4 * k, y); g.quadraticCurveTo(x + 6 * k, y + 2 * k, x + 8 * k, y); g.stroke();
         }
         break;
@@ -360,7 +388,7 @@ class Renderer {
     ctx.fillStyle = '#0b1119';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this.cache, this.cam.x, this.cam.y, game.W * s, game.H * s);
+    ctx.drawImage(this.animate && this.animFrame ? this.cache2 : this.cache, this.cam.x, this.cam.y, game.W * s, game.H * s);
 
     // visible range (one extra tile each side because jittered polygons overlap cells)
     const x0 = Math.max(0, Math.floor(-this.cam.x / s) - 1), y0 = Math.max(0, Math.floor(-this.cam.y / s) - 1);
@@ -462,24 +490,39 @@ class Renderer {
         this.outlinedText(t.settlement.name + (t.settlement.capital ? ' ★' : ''), cx(x), this.cam.y + y * s + s * 0.9, '#fff', 'rgba(0,0,0,0.85)');
       }
     }
+    // Smoke over towns and cities
+    if (this.animate && s >= 10) {
+      this.updateSmoke(x0, y0, x1, y1);
+      for (const p of this.smoke) {
+        const a = 0.35 * (1 - p.age / p.life);
+        ctx.fillStyle = `rgba(200,200,210,${a.toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(this.cam.x + p.x * s, this.cam.y + p.y * s, s * (0.08 + p.age * 0.02), 0, Math.PI * 2); ctx.fill();
+      }
+    }
     // Flags fly over capitals; when zoomed out the nation name sits beside the flag.
     for (const n of game.nations) {
       if (!n.alive || n.capital < 0 || !n.flag) continue;
       const t = game.tiles[n.capital];
       if (t.x < x0 || t.x > x1 || t.y < y0 || t.y > y1) continue;
+      const flag = this.animate && this.animFrame && n.flag2 ? n.flag2 : n.flag;
       if (s >= 14) {
         const fw = Math.max(14, s * 0.7), fh = fw * 0.66;
         const fx = cx(t.x) + s * 0.15, fy = this.cam.y + t.y * s - fh * 0.7;
         ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = Math.max(1, s * 0.06);
         ctx.beginPath(); ctx.moveTo(fx, fy + fh + s * 0.2); ctx.lineTo(fx, fy - 2); ctx.stroke();
-        ctx.drawImage(n.flag, fx, fy, fw, fh);
+        ctx.drawImage(flag, fx, fy, fw, fh);
       } else {
         ctx.font = `700 13px Cinzel, "Trajan Pro", Georgia, serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         const w = ctx.measureText(n.name).width;
         const left = cx(t.x) - (w + 26) / 2;
-        ctx.drawImage(n.flag, left, cy(t.y) - 20, 22, 15);
+        ctx.drawImage(flag, left, cy(t.y) - 20, 22, 15);
         this.outlinedText(n.name, left + 26, cy(t.y) - 12, n.color, 'rgba(0,0,0,0.85)');
       }
+    }
+    // Revealed ruins (Wandering Scholars) glow
+    if (this.player && this.player.ruinsRevealed) {
+      ctx.strokeStyle = 'rgba(241,215,122,0.8)'; ctx.lineWidth = 2;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const t = game.tiles[y * game.W + x]; if (t.ruins) { ctx.beginPath(); this.tracePoly(ctx, t.i, s); ctx.stroke(); } }
     }
     // Targeting mode
     if (this.highlight) {

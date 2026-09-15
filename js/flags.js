@@ -10,7 +10,8 @@ function makeFlag(nation) {
   const c = document.createElement('canvas');
   c.width = FLAG_W; c.height = FLAG_H;
   const g = c.getContext('2d');
-  const rng = new RNG(nation.name + '|' + nation.colorId + '|flag|' + (nation.flagSeed || 0));
+  // The design depends only on colour and the nation's own flag seed — renaming never changes a flag.
+  const rng = new RNG(nation.colorId + '|flag|' + (nation.flagSeed || 0));
   const field = nation.color;
   const dark = isLight(field);
   // secondary colour must contrast with the field
@@ -44,6 +45,16 @@ function makeFlag(nation) {
   g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.strokeRect(0.5, 0.5, W - 1, H - 1);
   nation.flag = c;
   nation.flagURL = c.toDataURL ? c.toDataURL() : '';
+  // second frame for the map: the fly half ripples (vertical slices shifted by a sine wave)
+  const c2 = document.createElement('canvas');
+  c2.width = W; c2.height = H;
+  const g2 = c2.getContext('2d');
+  for (let x = 0; x < W; x++) {
+    const k = Math.max(0, (x - W * 0.35) / (W * 0.65));
+    const dy = Math.round(Math.sin(x / W * Math.PI * 3) * 2.5 * k);
+    g2.drawImage(c, x, 0, 1, H, x, dy, 1, H);
+  }
+  nation.flag2 = c2;
   return c;
 }
 

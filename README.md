@@ -1,4 +1,4 @@
-# New World Map — v0.1.0
+# New World Map — v0.2.0
 
 A small turn-based, card-driven nation builder on a procedurally generated tile world. Plain HTML/JS/Canvas — no build step, no dependencies. The version is set in `js/data.js` (`GAME_VERSION`) and shown in the title bar and setup screen.
 
@@ -29,7 +29,12 @@ Your **hand** sits at the bottom of the map: up to 6 cards, refilled at the star
 - **Market:** buy a random card from one of five stalls for gold (two purchases per turn, price rises with each).
 - **Mastery:** every play of a card counts; 5 plays = ★ (cheaper / stronger), 12 = ★★. Bonus cards pay 25% more per tier, improvements yield +1 per tier, Casus Belli/March add attack, edicts last longer.
 - **Unlockable cards** carry over between games in the browser profile: Colonists (finish a game), Sea Raid (build two harbours), Mercenaries (conquer a settlement), Royal Marriage (win a game).
+- **Combos:** a card played after another this turn can get a bonus (Road Builders after Settlers is free; an improvement after Expansion is half price; March after Casus Belli +2 attack; Merchants after Envoys free; Great Work after Prospectors half; Charter after Migrants/Bumper Crop −30%; Master Builder after Road Builders −25%). Cards show "Combo ready" when it applies.
+- **Hold & Mulligan:** one card can be set aside in the Hold slot (safe from refills, playable later); once per game you may Mulligan the whole hand.
+- **Dilemma cards** (Refugees, Prophet, Border Dispute, Wandering Scholars, Bandit King) are free and offer two outcomes.
+- **Signature cards:** each colour has a unique card only it draws — Crimson *Legion* (storm without siege), Azure *Armada* (double sea raid), Emerald *Granary* (famine immunity), Amber *Monopoly* (double trade), Violet *Academy* (+1 hand size), Ivory *Masons' Guild* (free castle), Onyx *Deep Mine* (+3 materials), Teal *Wanderlust* (claim three tiles).
 - **Actions per turn:** 1, plus 1 for every two cities (max 3). End the turn with the button or `Space`; then every rival moves. The AI draws and plays from a hand under the same rules and discards what it can't use.
+- **Difficulty** (Gentle / Fair / Hard / Brutal) changes the AI's hand size, income and starting stock, your contentment, how often calamities hit you, and the score multiplier.
 - The game **autosaves** every turn (browser storage); *Continue saved game* appears on the setup screen.
 
 ## Rules of the land
@@ -44,12 +49,13 @@ Your **hand** sits at the bottom of the map: up to 6 cards, refilled at the star
 - **Contentment** (50 base) rises with worked luxury resources (+8 each; partners' luxuries +4), the Great Temple and festivals, and falls with sprawl (−3 per settlement beyond 4) and war (−6 each). It scales growth ×0.6–1.4; below 30 unrest builds and a settlement may go independent (reclaim it with Expansion).
 - **Wonders** (Great Work card, five contributions at the capital, one of each in the world): Great Temple, Lighthouse, Aqueduct, Colossus, Grand Library, Royal Road.
 - **Naval:** Colonists found villages on free coastal land within 6 of a harbour; Sea Raids take coastal enemy tiles from the sea at reduced cost.
+- **Faith:** the Great Temple, a Prophet or a Revelation founds a faith (at most three per world). It spreads along borders (5%/turn), trade routes (10%) and pacts; founders never convert. Shared faith warms relations (+1/turn up to 70), different faiths cool them (−0.5/turn), and attacking the faithful costs −10 with their kin. Founders gain +1 contentment and +10 score per follower.
 - **Edicts** are 12-turn policies (Harvest Festival, Great Levy, Market Fairs, Corvée Labour). **Random events** — harvests, plagues, migrants, bandits, storms — strike every nation now and then; castles keep bandits away.
 - **Win** by holding half of all claimed land, being the last nation standing, or top score at the turn limit.
 
 ## Interface
 
-Map with standings (top-right), legend (`L`, top-left), and the card tray (bottom). Sidebar: Selected tile (with the cards that can be played there), then collapsible *Since your last move*, *Your nation*, *Other nations* and *Chronicle*; open/closed states are remembered. Soft lo-fi sound effects are synthesised in-browser; the volume slider and mute (`M`) live in the title bar.
+Map with standings (top-right), legend (`L`, top-left), and the card tray (bottom). Sidebar: Selected tile (with the cards that can be played there), then collapsible *Since your last move*, *Your nation*, *Other nations* and *Chronicle*; open/closed states are remembered. Soft lo-fi sound effects and a generative ambient lo-fi loop (which turns minor and adds a soft drum while you are at war) are synthesised in-browser; effects and music each have a volume slider in the title bar (`M` mutes effects). **Motion** toggles the ambient animation: shimmering water, flowing rivers, chimney smoke over towns and fluttering flags.
 
 Controls: drag / WASD / arrows to pan, scroll to zoom, `1`–`6` select a card, `Space` end turn, `C` capital, `G` grid, `H` help, `Esc` cancel.
 

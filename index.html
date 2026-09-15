@@ -30,10 +30,15 @@
       <div id="resbar" class="resbar"></div>
       <div class="spacer"></div>
       <div class="toolbar">
-        <div class="volume" title="Sound volume">
-          <button id="btn-mute" class="tool" title="Mute / unmute (M)">🔊</button>
-          <input id="vol" type="range" min="0" max="100" value="50" title="Volume">
+        <div class="volume" title="Sound effects volume">
+          <button id="btn-mute" class="tool" title="Mute / unmute effects (M)">🔊</button>
+          <input id="vol" type="range" min="0" max="100" value="50" title="Effects volume">
         </div>
+        <div class="volume" title="Music volume">
+          <button id="btn-music" class="tool" title="Music on / off">🎵</button>
+          <input id="mvol" type="range" min="0" max="100" value="35" title="Music volume">
+        </div>
+        <button id="btn-motion" class="tool" title="Animated water, rivers, smoke and flags">✨ Motion</button>
         <button id="btn-center" class="tool" title="Centre on your capital (C)">⌂ Capital</button>
         <button id="btn-legend" class="tool" title="Show map legend (L)">Legend</button>
         <button id="btn-grid" class="tool" title="Toggle grid (G)">Grid</button>
@@ -79,8 +84,10 @@
             <span class="tray-title">Your hand</span>
             <span id="tray-note" class="tray-note"></span>
             <button id="btn-market" class="tool" title="Buy a card from the market (gold, no action)">🏪 Market</button>
+            <button id="btn-mulligan" class="tool" title="Once per game: throw away your whole hand and draw a fresh one">🔄 Mulligan</button>
           </div>
           <div id="armed" class="armed hidden"></div>
+          <div id="held" class="held hidden"></div>
           <div id="hand" class="hand"></div>
         </div>
 
@@ -130,10 +137,9 @@
         <div class="subtitle">Found a nation. Claim the wilds. Outlast your rivals. <span class="version" id="version-setup"></span></div>
       </div>
       <div class="grid2">
-        <label>Nation name <input id="in-nation" maxlength="40"></label>
-        <label>Leader name <input id="in-leader" maxlength="40"></label>
+        <label>Nation name <div class="with-btn"><input id="in-nation" maxlength="40"><button id="btn-random-nation" class="btn small" title="Random nation name">🎲</button></div></label>
+        <label>Leader name <div class="with-btn"><input id="in-leader" maxlength="40"><button id="btn-random-leader" class="btn small" title="Random leader name">🎲</button></div></label>
       </div>
-      <div class="row"><button id="btn-random-names" class="btn small">🎲 Random names</button></div>
       <h3 class="engraved">Your colour <span class="note">— each colour carries a national trait</span></h3>
       <div id="color-picker"></div>
       <div class="grid3">
@@ -145,6 +151,7 @@
           </select>
         </label>
         <label>Turn limit <input id="in-turns" type="number" min="30" max="500" value="150"></label>
+        <label>Difficulty <select id="in-diff"></select></label>
         <label>World type <select id="in-type"></select></label>
         <label>World size <select id="in-size"></select></label>
         <label>Seed <input id="in-seed" placeholder="blank = random"></label>
@@ -183,6 +190,10 @@
         <li><b>Pacts</b> (Pact card) make allies who cannot attack each other and receive a free Casus Belli when the other is attacked. <b>Tribute:</b> when clearly winning a war, a Treaty can demand tribute — peace plus part of their income for 20 turns.</li>
         <li><b>Reaction cards</b> (Militia, Sanctuary, Bribe, Ambush) are armed on your turn for free and trigger during the rivals' phase; unused ones return to your hand.</li>
         <li><b>Market:</b> buy a random card from a category for gold (two per turn). <b>Mastery:</b> playing the same card often improves it (★ on the card).</li>
+        <li><b>Combos:</b> some cards get a bonus when played after another this turn — Road Builders after Settlers is free, an improvement after Expansion is half price, March after Casus Belli is +2 attack, Merchants after Envoys is free, Great Work after Prospectors is half price. The card shows "Combo ready" when it applies.</li>
+        <li><b>Hold &amp; Mulligan:</b> one card can be kept in the Hold slot outside your hand (safe from refills) and played later. Once per game, Mulligan throws your whole hand away for a fresh one.</li>
+        <li><b>Dilemmas</b> (Refugees, Prophet, Border Dispute, Wandering Scholars, Bandit King) are free cards with two outcomes — you choose. <b>Signature cards:</b> each colour has a unique card only it can draw (Legion, Armada, Granary, Monopoly, Academy, Masons' Guild, Deep Mine, Wanderlust).</li>
+        <li><b>Faith:</b> the Great Temple, a Prophet or a Revelation founds a faith named for your nation. It spreads along borders and trade routes; nations of the same faith warm to each other, different faiths cool, and attacking the faithful offends their kin. Founders gain contentment and score per follower.</li>
         <li><b>Contentment</b> (😊) comes from worked luxury resources (gems, spices, pearls, wine…), trade partners' luxuries, the Great Temple and festivals; sprawl and war lower it. Content people grow faster; below 30, settlements may rise up and go independent — claim them back with Expansion.</li>
         <li><b>Wonders</b> (Great Work card): five contributions at your capital complete one; each may exist only once in the world. <b>Colonists</b> and <b>Sea Raids</b> reach across the water from your harbours.</li>
         <li><b>Edicts</b> (Proclamation) are 12-turn policies. <b>Events</b> strike every nation now and then. The game autosaves every turn; unlocked cards carry over between games.</li>
