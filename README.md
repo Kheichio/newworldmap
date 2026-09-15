@@ -43,7 +43,11 @@ Key rules:
 - Relations drift: trade and charismatic leaders warm them; shared borders, land hunger and warlike neighbours cool them. Hostile AI nations will attack.
 - **Win** by holding half of all claimed land, being the last nation standing, or top score at the turn limit.
 
-Controls: drag / WASD / arrows to pan, scroll to zoom, click a tile for actions, `Space` to wait, `C` capital, `G` grid, `H` help, `Esc` deselect.
+**Playing a turn:** use the quick actions in the sidebar (Expand, Village, Improve, Road, Castle, Conquer) — each one lights up every valid tile on the map and dims the rest; click one to act. Or click any tile to inspect it and pick from its panel, which shows costs and the yield each improvement would give. The **Last turn** panel summarises what happened to you; hatched tiles are yours but idle (no settlement within 2).
+
+Controls: drag / WASD / arrows to pan, scroll to zoom, `Space` to wait, `C` capital, `L` legend, `G` grid, `H` help, `Esc` cancel.
+
+Fonts (Cinzel, Cormorant Garamond) load from Google Fonts; without internet the page falls back to Georgia/serif.
 
 ## Code layout
 

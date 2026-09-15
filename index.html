@@ -4,114 +4,154 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>New World Map</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="app" class="hidden">
-    <header id="topbar">
-      <div class="brand">🗺️ New World Map</div>
-      <div id="turn-info">Turn 1</div>
-      <div id="ranking"></div>
+    <!-- ======= Top bar: title, turn, resources ======= -->
+    <header id="topbar" class="plate">
+      <div class="brand">
+        <span class="laurel">❦</span>
+        <span class="brand-name">New World Map</span>
+      </div>
+      <div id="turn-badge" class="turn-badge">
+        <div class="tb-label">Turn</div>
+        <div class="tb-value" id="turn-info">1</div>
+      </div>
+      <div id="resbar" class="resbar"></div>
       <div class="spacer"></div>
-      <button id="btn-center" title="Centre on your capital (C)">⌂ Capital</button>
-      <button id="btn-grid" title="Toggle grid (G)">Grid</button>
-      <button id="btn-help" title="How to play (H)">?</button>
-      <button id="btn-new">New game</button>
+      <div class="toolbar">
+        <button id="btn-center" class="tool" title="Centre on your capital (C)">⌂ Capital</button>
+        <button id="btn-legend" class="tool" title="Show map legend (L)">Legend</button>
+        <button id="btn-grid" class="tool" title="Toggle grid (G)">Grid</button>
+        <button id="btn-help" class="tool" title="How to play (H)">Help</button>
+        <button id="btn-new" class="tool">New game</button>
+      </div>
     </header>
+
     <div id="main">
+      <!-- ======= Map ======= -->
       <div id="map-wrap">
         <canvas id="map"></canvas>
+        <div id="mode-banner" class="mode-banner hidden"></div>
+        <div id="ranking" class="ranking"></div>
+        <div id="legend" class="legend plate hidden">
+          <div class="legend-title">Legend</div>
+          <div class="legend-grid">
+            <span class="lg-sym"><i class="sym village"></i></span><span>Village</span>
+            <span class="lg-sym"><i class="sym town"></i></span><span>Town</span>
+            <span class="lg-sym"><i class="sym city"></i></span><span>City</span>
+            <span class="lg-sym"><i class="sym capital"></i></span><span>Capital (gold ring)</span>
+            <span class="lg-sym"><i class="sym castle"></i></span><span>Castle</span>
+            <span class="lg-sym"><i class="sym harbor"></i></span><span>Harbour (blue corner)</span>
+            <span class="lg-sym"><i class="sym imp"></i></span><span>Improvement (top-right icon)</span>
+            <span class="lg-sym">🌾🐄⛏️</span><span>Resource on tile</span>
+            <span class="lg-sym"><i class="sym road"></i></span><span>Road</span>
+            <span class="lg-sym"><i class="sym river"></i></span><span>River</span>
+            <span class="lg-sym"><i class="sym border"></i></span><span>Border (nation colour)</span>
+            <span class="lg-sym"><i class="sym unworked"></i></span><span>Your unworked land (hatched)</span>
+          </div>
+        </div>
         <div id="tooltip" class="hidden"></div>
         <div id="toast" class="hidden"></div>
       </div>
+
+      <!-- ======= Sidebar ======= -->
       <aside id="sidebar">
-        <section id="nation-panel" class="panel"></section>
-        <section id="res-panel" class="panel"></section>
-        <section id="tile-panel" class="panel">
-          <h3>Selected tile</h3>
-          <div class="muted">Click a tile on the map.</div>
-        </section>
-        <section id="general-panel" class="panel">
-          <h3>Your turn</h3>
-          <div class="row">
-            <button id="btn-wait" class="action wide" title="Take no action this turn and keep your resources (Space)">⏳ Wait &amp; save</button>
+        <section id="turn-panel" class="plate panel">
+          <div class="turn-head">
+            <div class="turn-title" id="turn-title">Your move</div>
+            <div class="turn-sub" id="turn-sub">Choose one action. Then every rival nation makes its move.</div>
           </div>
+          <div class="quick-grid" id="quick-actions"></div>
+          <button id="btn-wait" class="btn wide" title="Take no action this turn and keep your resources (Space)">⏳ &nbsp;Wait &amp; save resources</button>
         </section>
-        <section id="diplo-panel" class="panel"></section>
-        <section id="log-panel" class="panel">
-          <h3>Chronicle</h3>
+
+        <section id="tile-panel" class="plate panel"></section>
+
+        <section id="report-panel" class="plate panel">
+          <h3 class="engraved">Last turn</h3>
+          <div id="report" class="report"></div>
+        </section>
+
+        <section id="nation-panel" class="plate panel"></section>
+
+        <section id="diplo-panel" class="plate panel"></section>
+
+        <section id="log-panel" class="plate panel">
+          <h3 class="engraved">Chronicle</h3>
           <div id="log"></div>
         </section>
       </aside>
     </div>
   </div>
 
-  <!-- Setup -->
+  <!-- ======= Setup ======= -->
   <div id="setup" class="modal">
-    <div class="modal-box">
-      <h1>🗺️ New World Map</h1>
-      <p class="muted">A small turn-based nation builder on a procedurally generated world. Every nation — including yours — takes exactly one action per turn.</p>
+    <div class="modal-box plate">
+      <div class="title-block">
+        <div class="laurel big">❦</div>
+        <h1>New World Map</h1>
+        <div class="subtitle">Found a nation. Claim the wilds. Outlast your rivals.</div>
+      </div>
       <div class="grid2">
         <label>Nation name <input id="in-nation" maxlength="40"></label>
         <label>Leader name <input id="in-leader" maxlength="40"></label>
       </div>
-      <div class="row"><button id="btn-random-names" class="small">🎲 Random names</button></div>
-      <h3>Choose your colour <span class="muted">(each colour has its own national trait)</span></h3>
+      <div class="row"><button id="btn-random-names" class="btn small">🎲 Random names</button></div>
+      <h3 class="engraved">Your colour <span class="note">— each colour carries a national trait</span></h3>
       <div id="color-picker"></div>
-      <div class="grid2">
-        <label>Leader trait
-          <select id="in-ltrait"></select>
-        </label>
+      <div class="grid3">
+        <label>Leader trait <select id="in-ltrait"></select></label>
         <label>Rival nations
           <select id="in-ai">
             <option value="2">2</option><option value="3">3</option><option value="4">4</option>
             <option value="5" selected>5</option><option value="6">6</option><option value="7">7</option>
           </select>
         </label>
-        <label>World type
-          <select id="in-type"></select>
-        </label>
-        <label>World size
-          <select id="in-size"></select>
-        </label>
         <label>Turn limit <input id="in-turns" type="number" min="30" max="500" value="150"></label>
-        <label>Seed <input id="in-seed" placeholder="leave blank for random"></label>
+        <label>World type <select id="in-type"></select></label>
+        <label>World size <select id="in-size"></select></label>
+        <label>Seed <input id="in-seed" placeholder="blank = random"></label>
       </div>
-      <div id="trait-preview" class="trait-preview"></div>
-      <div class="row right"><button id="btn-start" class="primary">Found your nation</button></div>
+      <div id="trait-preview" class="inset"></div>
+      <div class="row right"><button id="btn-start" class="btn gold big">Found your nation</button></div>
     </div>
   </div>
 
-  <!-- Help -->
+  <!-- ======= Help ======= -->
   <div id="help" class="modal hidden">
-    <div class="modal-box">
-      <h2>How to play</h2>
+    <div class="modal-box plate">
+      <h2 class="engraved">How to play</h2>
       <ul class="help">
-        <li><b>One action per turn.</b> Click a tile, pick an action from the panel (or press <kbd>Space</kbd> to wait). Then every rival nation acts and the turn ends.</li>
-        <li><b>Tiles only produce when worked</b> — within 2 tiles of one of your settlements. Found villages to bring new land into production.</li>
-        <li><b>Food</b> feeds population; surplus grows your settlements (villages → towns → cities need population to upgrade). Shortfall causes famine.</li>
-        <li><b>Materials</b> build improvements, roads, settlements and castles. <b>Gold</b> pays for expansion, trade and upkeep.</li>
-        <li><b>Resources</b> (animals, ores, timber, crops, sea life) give a taste of their yield, and their full yield once you build the matching improvement: pasture, mine, lumber camp, farm or fishery.</li>
-        <li><b>Borders grow naturally</b> around settlements each turn. <b>Expand border</b> grabs a specific tile now. Villages can also be founded on free land bordering your territory.</li>
-        <li><b>Roads</b> connecting a settlement to your capital add gold. <b>Harbours</b> on coastal settlements add gold and food, and let you trade across the sea.</li>
-        <li><b>Trade routes</b> earn both nations gold every turn and improve relations. Shared borders without trade breed friction, as do land-hungry or warlike neighbours.</li>
-        <li><b>Castles</b> claim nearby land, defend everything within 2 tiles and add attack strength. <b>Conquer</b> an enemy border tile when your attack beats its defence.</li>
-        <li><b>Win</b> by holding half of all claimed land, being the last nation standing, or having the highest score when the turn limit is reached.</li>
-        <li>Controls: drag or <kbd>WASD</kbd>/arrows to pan, scroll to zoom, <kbd>C</kbd> centre on capital, <kbd>G</kbd> grid, <kbd>Esc</kbd> deselect.</li>
+        <li><b>One action per turn.</b> Use the quick actions (they highlight every valid tile), or click any tile and choose from its panel. Press <kbd>Space</kbd> to wait. Then every rival acts and the turn ends.</li>
+        <li><b>Land only produces when worked</b> — within 2 tiles of one of your settlements. Hatched tiles on the map are yours but idle: found a village nearby to put them to work.</li>
+        <li><b>Food</b> feeds population; the surplus fills the growth bar and adds people to your settlements. Villages become towns (pop 4) and cities (pop 9). A shortfall causes famine.</li>
+        <li><b>Materials</b> build improvements, roads, settlements and castles. <b>Gold</b> pays for expansion, trade, conquest and upkeep. Costs rise as your nation grows.</li>
+        <li><b>Resources</b> on a tile give a taste of their yield; the matching improvement (pasture, mine, lumber camp, farm, fishery) unlocks the full yield.</li>
+        <li><b>Borders grow by themselves</b> around settlements every turn. <b>Expand</b> grabs a specific tile now. Villages can be founded on free land touching your border.</li>
+        <li><b>Roads</b> that link a settlement to your capital earn gold. <b>Harbours</b> on coastal settlements earn gold and food and allow sea trade.</li>
+        <li><b>Trade routes</b> pay both nations every turn and warm relations. Shared borders without trade, land hunger and warlike leaders cool them — hostile neighbours will attack.</li>
+        <li><b>Castles</b> claim nearby land, defend everything within 2 tiles and raise your attack. <b>Conquer</b> an enemy border tile when your attack beats its defence (shown on the button).</li>
+        <li><b>Win</b> by holding half of all claimed land, being the last nation standing, or having the highest score at the turn limit.</li>
+        <li>Drag / <kbd>WASD</kbd> / arrows to pan · scroll to zoom · <kbd>C</kbd> capital · <kbd>L</kbd> legend · <kbd>G</kbd> grid · <kbd>Esc</kbd> cancel.</li>
       </ul>
-      <div class="row right"><button id="btn-help-close" class="primary">Close</button></div>
+      <div class="row right"><button id="btn-help-close" class="btn gold">Close</button></div>
     </div>
   </div>
 
-  <!-- Game over -->
+  <!-- ======= Game over ======= -->
   <div id="gameover" class="modal hidden">
-    <div class="modal-box">
-      <h2 id="go-title">Game over</h2>
-      <p id="go-reason"></p>
+    <div class="modal-box plate">
+      <h2 class="engraved" id="go-title">Game over</h2>
+      <p id="go-reason" class="note"></p>
       <table id="go-table"></table>
       <div class="row right">
-        <button id="btn-continue">Keep playing</button>
-        <button id="btn-go-new" class="primary">New game</button>
+        <button id="btn-continue" class="btn">Keep playing</button>
+        <button id="btn-go-new" class="btn gold">New game</button>
       </div>
     </div>
   </div>

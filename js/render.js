@@ -21,7 +21,8 @@ class Renderer {
     this.cam = { x: 0, y: 0, zoom: 1.5 };
     this.hover = null;
     this.selected = null;
-    this.highlight = null; // Set of tile indices to highlight (e.g. valid targets)
+    this.highlight = null; // Set of tile indices that are valid targets in targeting mode
+    this.player = null;    // nation whose idle land gets hatched
     this.showGrid = false;
     this.buildTerrainCache();
   }
@@ -158,6 +159,21 @@ class Renderer {
       ctx.fillStyle = rgba(game.nations[t.owner].color, t.water ? 0.22 : 0.3);
       ctx.fillRect(sx(x), sy(y), s + 0.5, s + 0.5);
     }
+    // Hatch the player's idle land (owned but not within reach of a settlement)
+    if (this.player && s >= 8) {
+      const worked = game.workedTiles(this.player);
+      ctx.strokeStyle = 'rgba(0,0,0,0.38)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const t = game.tiles[y * game.W + x];
+        if (t.owner !== this.player.id || t.water || worked.has(t.i)) continue;
+        const px = sx(x), py = sy(y);
+        ctx.moveTo(px, py + s * 0.5); ctx.lineTo(px + s * 0.5, py);
+        ctx.moveTo(px, py + s); ctx.lineTo(px + s, py);
+        ctx.moveTo(px + s * 0.5, py + s); ctx.lineTo(px + s, py + s * 0.5);
+      }
+      ctx.stroke();
+    }
     // Grid
     if (this.showGrid && s >= 10) {
       ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
@@ -222,22 +238,30 @@ class Renderer {
         this.outlinedText(n.name, sx(t.x) + s / 2, sy(t.y) - 10, n.color, 'rgba(0,0,0,0.85)');
       }
     }
-    // Highlights
+    // Targeting mode: dim everything that is not a valid target, ring the valid ones in gold.
     if (this.highlight) {
-      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1;
+      ctx.fillStyle = 'rgba(5,8,14,0.55)';
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        if (!this.highlight.has(y * game.W + x)) ctx.fillRect(sx(x), sy(y), s + 0.5, s + 0.5);
+      }
+      ctx.strokeStyle = '#f1d77a'; ctx.lineWidth = Math.max(1.5, s * 0.1);
+      ctx.fillStyle = 'rgba(241,215,122,0.18)';
       for (const i of this.highlight) {
         const t = game.tiles[i];
         if (t.x < x0 || t.x > x1 || t.y < y0 || t.y > y1) continue;
-        ctx.fillRect(sx(t.x), sy(t.y), s, s); ctx.strokeRect(sx(t.x) + 0.5, sy(t.y) + 0.5, s - 1, s - 1);
+        ctx.fillRect(sx(t.x), sy(t.y), s, s);
+        ctx.strokeRect(sx(t.x) + 1, sy(t.y) + 1, s - 2, s - 2);
       }
     }
     if (this.hover) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2;
       ctx.strokeRect(sx(this.hover.x) + 1, sy(this.hover.y) + 1, s - 2, s - 2);
     }
     if (this.selected) {
-      ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 3;
-      ctx.strokeRect(sx(this.selected.x) + 1.5, sy(this.selected.y) + 1.5, s - 3, s - 3);
+      ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = 5;
+      ctx.strokeRect(sx(this.selected.x) + 2, sy(this.selected.y) + 2, s - 4, s - 4);
+      ctx.strokeStyle = '#f1d77a'; ctx.lineWidth = 3;
+      ctx.strokeRect(sx(this.selected.x) + 2, sy(this.selected.y) + 2, s - 4, s - 4);
     }
   }
 

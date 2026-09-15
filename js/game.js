@@ -518,7 +518,11 @@ class Game {
         if (room.length) {
           room.sort((a, b) => (a.pop / SETTLEMENTS[a.type].maxPop) - (b.pop / SETTLEMENTS[b.type].maxPop));
           room[0].pop++; n.growth -= need;
-        } else n.growth = need; // capped until there is room
+          if (n.isPlayer) this.addLog(`${room[0].name} grows to ${room[0].pop} people.`, n);
+        } else {
+          n.growth = need; // capped until there is room
+          if (n.isPlayer && !n.growthWarned) { this.addLog(`Your settlements are full — upgrade one or found a village so your people can grow.`, n); n.growthWarned = true; }
+        }
       }
     }
     this.updateRelations();
@@ -576,6 +580,7 @@ class Game {
   // one free tile within its influence radius that touches existing territory.
   naturalGrowth(n) {
     const chance = 0.5 + (n.trait === 'wanderers' ? 0.2 : 0);
+    let grabbed = 0;
     for (const i of n.settlements) {
       if (!this.rng.chance(chance)) continue;
       const s = this.tiles[i];
@@ -587,8 +592,9 @@ class Game {
         const v = this.tileValue(t, n) - this.dist(s, t) * 0.8 + this.rng.float() * 0.5;
         if (v > bv) { bv = v; best = t; }
       }
-      if (best) this.claim(n, best);
+      if (best) { this.claim(n, best); grabbed++; }
     }
+    if (grabbed && n.isPlayer) this.addLog(`Your borders spread naturally over ${grabbed} tile${grabbed === 1 ? '' : 's'}.`, n);
   }
   landCount(n) { let c = 0; for (const i of n.owned) if (!this.tiles[i].water) c++; return c; }
   landShare(n) { return this.landCount(n) / this.map.landCount; }

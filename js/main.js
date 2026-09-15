@@ -5,6 +5,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btn-wait').onclick = () => playerAction('wait');
   $('btn-center').onclick = centerOnHome;
   $('btn-grid').onclick = () => { UI.renderer.showGrid = !UI.renderer.showGrid; UI.needsDraw = true; };
+  $('btn-legend').onclick = () => $('legend').classList.toggle('hidden');
   $('btn-help').onclick = () => $('help').classList.remove('hidden');
   $('btn-help-close').onclick = () => $('help').classList.add('hidden');
   const newGame = () => {
@@ -15,5 +16,5 @@ window.addEventListener('DOMContentLoaded', () => {
   };
   $('btn-new').onclick = newGame;
   $('btn-go-new').onclick = newGame;
-  $('btn-continue').onclick = () => { UI.game.continued = true; $('gameover').classList.add('hidden'); };
+  $('btn-continue').onclick = () => { UI.game.continued = true; $('gameover').classList.add('hidden'); refreshAll(); };
 });
