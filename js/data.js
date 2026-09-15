@@ -1,6 +1,6 @@
-// Static game data: terrain, resources, nations, traits, costs, name generators.
+﻿// Static game data: terrain, resources, nations, traits, costs, name generators.
 
-const GAME_VERSION = '0.0.6';
+const GAME_VERSION = '0.1.0';
 
 const TERRAINS = {
   ocean:     { name: 'Ocean',     color: '#1d4e79', water: true, food: 0, mat: 0, gold: 0 },
@@ -31,26 +31,26 @@ const RESOURCES = [
   { id: 'sheep',     name: 'Sheep',       cat: 'animal', icon: '🐑', terrains: ['hills', 'grassland', 'tundra'],   imp: 'pasture', yield: { food: 1, gold: 1 } },
   { id: 'horses',    name: 'Horses',      cat: 'animal', icon: '🐎', terrains: ['plains', 'grassland', 'savanna'], imp: 'pasture', yield: { food: 1, mat: 1, gold: 1 } },
   { id: 'goats',     name: 'Goats',       cat: 'animal', icon: '🐐', terrains: ['hills', 'mountains', 'desert'],   imp: 'pasture', yield: { food: 2 } },
-  { id: 'elephants', name: 'Elephants',   cat: 'animal', icon: '🐘', terrains: ['savanna', 'jungle'],              imp: 'pasture', yield: { gold: 3 } },
+  { id: 'elephants', name: 'Elephants',   cat: 'animal', icon: '🐘', terrains: ['savanna', 'jungle'],              imp: 'pasture', luxury: true, yield: { gold: 3 } },
   { id: 'camels',    name: 'Camels',      cat: 'animal', icon: '🐪', terrains: ['desert'],                         imp: 'pasture', yield: { food: 1, gold: 2 } },
   { id: 'bison',     name: 'Bison',       cat: 'animal', icon: '🦬', terrains: ['plains', 'savanna'],              imp: 'pasture', yield: { food: 3 } },
   { id: 'bears',     name: 'Bears',       cat: 'animal', icon: '🐻', terrains: ['forest', 'tundra', 'snow'],       imp: 'pasture', yield: { food: 1, gold: 1 } },
   { id: 'seals',     name: 'Seals',       cat: 'animal', icon: '🦭', terrains: ['snow', 'tundra'], coastal: true,  imp: 'pasture', yield: { food: 2 } },
   // Sea life
   { id: 'fish',      name: 'Fish',        cat: 'sea', icon: '🐟', terrains: ['coast', 'lake'],  imp: 'fishery', yield: { food: 3 } },
-  { id: 'whales',    name: 'Whales',      cat: 'sea', icon: '🐋', terrains: ['coast'],          imp: 'fishery', yield: { food: 1, gold: 3 } },
+  { id: 'whales',    name: 'Whales',      cat: 'sea', icon: '🐋', terrains: ['coast'],          imp: 'fishery', luxury: true, yield: { food: 1, gold: 3 } },
   { id: 'crabs',     name: 'Crabs',       cat: 'sea', icon: '🦀', terrains: ['coast', 'beach'], imp: 'fishery', yield: { food: 2, gold: 1 } },
-  { id: 'pearls',    name: 'Pearls',      cat: 'sea', icon: '🫧', terrains: ['coast'],          imp: 'fishery', yield: { gold: 4 } },
+  { id: 'pearls',    name: 'Pearls',      cat: 'sea', icon: '🫧', terrains: ['coast'],          imp: 'fishery', luxury: true, yield: { gold: 4 } },
   // Ores & stone
   { id: 'iron',      name: 'Iron',        cat: 'ore', icon: '⛓️', terrains: ['hills', 'mountains'],           imp: 'mine', yield: { mat: 3 } },
   { id: 'copper',    name: 'Copper',      cat: 'ore', icon: '🟠', terrains: ['hills', 'mountains', 'desert'], imp: 'mine', yield: { mat: 2, gold: 1 } },
   { id: 'tin',       name: 'Tin',         cat: 'ore', icon: '⚪', terrains: ['hills', 'mountains'],           imp: 'mine', yield: { mat: 2, gold: 1 } },
-  { id: 'gold',      name: 'Gold',        cat: 'ore', icon: '🪙', terrains: ['hills', 'mountains', 'desert'], imp: 'mine', yield: { gold: 4 } },
-  { id: 'silver',    name: 'Silver',      cat: 'ore', icon: '🥈', terrains: ['hills', 'mountains'],           imp: 'mine', yield: { gold: 3 } },
+  { id: 'gold',      name: 'Gold',        cat: 'ore', icon: '🪙', terrains: ['hills', 'mountains', 'desert'], imp: 'mine', luxury: true, yield: { gold: 4 } },
+  { id: 'silver',    name: 'Silver',      cat: 'ore', icon: '🥈', terrains: ['hills', 'mountains'],           imp: 'mine', luxury: true, yield: { gold: 3 } },
   { id: 'coal',      name: 'Coal',        cat: 'ore', icon: '⚫', terrains: ['hills', 'forest', 'mountains'], imp: 'mine', yield: { mat: 3 } },
-  { id: 'gems',      name: 'Gems',        cat: 'ore', icon: '💎', terrains: ['mountains', 'jungle', 'hills'], imp: 'mine', yield: { gold: 4 } },
+  { id: 'gems',      name: 'Gems',        cat: 'ore', icon: '💎', terrains: ['mountains', 'jungle', 'hills'], imp: 'mine', luxury: true, yield: { gold: 4 } },
   { id: 'salt',      name: 'Salt',        cat: 'ore', icon: '🧂', terrains: ['desert', 'marsh', 'beach'],     imp: 'mine', yield: { food: 1, gold: 2 } },
-  { id: 'marble',    name: 'Marble',      cat: 'ore', icon: '🏛️', terrains: ['hills', 'mountains'],           imp: 'mine', yield: { mat: 2, gold: 2 } },
+  { id: 'marble',    name: 'Marble',      cat: 'ore', icon: '🏛️', terrains: ['hills', 'mountains'],           imp: 'mine', luxury: true, yield: { mat: 2, gold: 2 } },
   { id: 'stone',     name: 'Stone',       cat: 'ore', icon: '🪨', terrains: ['hills', 'mountains', 'tundra'], imp: 'mine', yield: { mat: 2 } },
   // Timber
   { id: 'oak',       name: 'Oak',         cat: 'wood', icon: '🌳', terrains: ['forest', 'woods'],  imp: 'lumber', yield: { mat: 3 } },
@@ -58,23 +58,23 @@ const RESOURCES = [
   { id: 'birch',     name: 'Birch',       cat: 'wood', icon: '🎋', terrains: ['woods', 'tundra'],  imp: 'lumber', yield: { mat: 2 } },
   { id: 'cedar',     name: 'Cedar',       cat: 'wood', icon: '🌴', terrains: ['woods', 'hills'],   imp: 'lumber', yield: { mat: 2, gold: 1 } },
   { id: 'mahogany',  name: 'Mahogany',    cat: 'wood', icon: '🪵', terrains: ['jungle'],           imp: 'lumber', yield: { mat: 2, gold: 2 } },
-  { id: 'ebony',     name: 'Ebony',       cat: 'wood', icon: '🖤', terrains: ['jungle'],           imp: 'lumber', yield: { gold: 3 } },
+  { id: 'ebony',     name: 'Ebony',       cat: 'wood', icon: '🖤', terrains: ['jungle'],           imp: 'lumber', luxury: true, yield: { gold: 3 } },
   { id: 'teak',      name: 'Teak',        cat: 'wood', icon: '🪑', terrains: ['jungle', 'savanna'], imp: 'lumber', yield: { mat: 3 } },
   // Crops
   { id: 'wheat',     name: 'Wheat',       cat: 'crop', icon: '🌾', terrains: ['grassland', 'plains'],             imp: 'farm', yield: { food: 3 } },
   { id: 'barley',    name: 'Barley',      cat: 'crop', icon: '🍺', terrains: ['plains', 'tundra', 'hills'],       imp: 'farm', yield: { food: 2, gold: 1 } },
   { id: 'rice',      name: 'Rice',        cat: 'crop', icon: '🍚', terrains: ['marsh', 'jungle'],                 imp: 'farm', yield: { food: 3 } },
   { id: 'maize',     name: 'Maize',       cat: 'crop', icon: '🌽', terrains: ['grassland', 'savanna', 'plains'],  imp: 'farm', yield: { food: 3 } },
-  { id: 'cotton',    name: 'Cotton',      cat: 'crop', icon: '☁️', terrains: ['grassland', 'savanna'],            imp: 'farm', yield: { gold: 3 } },
+  { id: 'cotton',    name: 'Cotton',      cat: 'crop', icon: '☁️', terrains: ['grassland', 'savanna'],            imp: 'farm', luxury: true, yield: { gold: 3 } },
   { id: 'flax',      name: 'Flax',        cat: 'crop', icon: '🧵', terrains: ['grassland', 'marsh'],              imp: 'farm', yield: { mat: 1, gold: 2 } },
-  { id: 'spices',    name: 'Spices',      cat: 'crop', icon: '🌶️', terrains: ['jungle'],                          imp: 'farm', yield: { gold: 4 } },
+  { id: 'spices',    name: 'Spices',      cat: 'crop', icon: '🌶️', terrains: ['jungle'],                          imp: 'farm', luxury: true, yield: { gold: 4 } },
   { id: 'sugar',     name: 'Sugar cane',  cat: 'crop', icon: '🎍', terrains: ['jungle', 'savanna', 'marsh'],      imp: 'farm', yield: { food: 1, gold: 2 } },
-  { id: 'grapes',    name: 'Grapes',      cat: 'crop', icon: '🍇', terrains: ['hills', 'plains'],                 imp: 'farm', yield: { food: 1, gold: 2 } },
+  { id: 'grapes',    name: 'Grapes',      cat: 'crop', icon: '🍇', terrains: ['hills', 'plains'],                 imp: 'farm', luxury: true, yield: { food: 1, gold: 2 } },
   { id: 'olives',    name: 'Olives',      cat: 'crop', icon: '🫒', terrains: ['plains', 'hills', 'savanna'],      imp: 'farm', yield: { food: 1, gold: 2 } },
   { id: 'dates',     name: 'Dates',       cat: 'crop', icon: '🌴', terrains: ['desert'],                          imp: 'farm', yield: { food: 3 } },
-  { id: 'coffee',    name: 'Coffee',      cat: 'crop', icon: '☕', terrains: ['jungle', 'hills'],                  imp: 'farm', yield: { gold: 3 } },
+  { id: 'coffee',    name: 'Coffee',      cat: 'crop', icon: '☕', terrains: ['jungle', 'hills'],                  imp: 'farm', luxury: true, yield: { gold: 3 } },
   { id: 'bananas',   name: 'Bananas',     cat: 'crop', icon: '🍌', terrains: ['jungle'],                          imp: 'farm', yield: { food: 3 } },
-  { id: 'tea',       name: 'Tea',         cat: 'crop', icon: '🍵', terrains: ['hills', 'jungle', 'woods'],        imp: 'farm', yield: { gold: 3 } },
+  { id: 'tea',       name: 'Tea',         cat: 'crop', icon: '🍵', terrains: ['hills', 'jungle', 'woods'],        imp: 'farm', luxury: true, yield: { gold: 3 } },
 ];
 const RESOURCE_BY_ID = Object.fromEntries(RESOURCES.map(r => [r.id, r]));
 
@@ -132,6 +132,17 @@ const CARDS = {
   march:   { name: 'March',          icon: '🗡️', action: 'conquer',     target: 'tile',   weight: 1.0, desc: 'Seize a border tile from a nation you are at war with.',           nation: ['martial'],                leader: ['warlike', 'reckless'] },
   treaty:  { name: 'Treaty',         icon: '🕊️', action: 'peace',       target: 'nation', weight: 0.6, desc: 'Offer peace to a nation you are at war with.',                    nation: ['scholarly', 'mercantile'], leader: ['charismatic'] },
   edict:   { name: 'Proclamation',   icon: '📯', action: 'edict',       target: 'edict',  weight: 0.6, desc: 'Proclaim an edict: a national policy for 12 turns.',              nation: [],                         leader: ['pious', 'wise'] },
+  alliance:  { name: 'Pact',         icon: '🤲', action: 'alliance',   target: 'nation', weight: 0.5, desc: 'Propose an alliance to a friendly nation. Allies cannot attack each other and answer calls to war.', nation: ['scholarly', 'mercantile'], leader: ['charismatic', 'cunning'] },
+  greatwork: { name: 'Great Work',   icon: '🏛️', action: 'greatwork',  target: 'wonder', weight: 0.7, desc: 'Contribute to a wonder at your capital. Five contributions complete it.',      nation: ['builders', 'scholarly'],   leader: ['pious', 'wise'] },
+  colonists: { name: 'Colonists',    icon: '⛵', action: 'colonize',   target: 'tile',   weight: 0.6, desc: 'Found a village on free coastal land within 6 tiles of one of your harbours.', nation: ['maritime', 'wanderers'],   leader: ['ambitious'], unlock: 'colonists' },
+  raid:      { name: 'Sea Raid',     icon: '🏴‍☠️', action: 'raid',     target: 'tile',   weight: 0.6, desc: 'Seize a coastal enemy tile within 6 tiles of your harbour, at reduced cost.',    nation: ['maritime', 'martial'],     leader: ['warlike', 'reckless'], unlock: 'raid' },
+  marriage:  { name: 'Royal Marriage', icon: '💍', action: 'marriage', target: 'nation', weight: 0.4, desc: '+25 relations with a nation, and they will accept a pact.',                 nation: ['scholarly'],               leader: ['charismatic'], unlock: 'marriage' },
+  mercenaries: { name: 'Mercenaries', icon: '🪖', weight: 0.5, desc: '+5 attack for the rest of this turn (costs 30 gold).',                            nation: ['martial'],                 leader: ['warlike', 'reckless'], unlock: 'mercenaries' },
+  // --- reaction cards: arm them on your turn (free); they trigger during the rivals' phase, otherwise return to your hand ---
+  militia:   { name: 'Militia',      icon: '🛡️', reaction: true, weight: 0.6, desc: 'While armed: +4 defence on all your tiles during the rivals\' phase. Used up if you are attacked.', nation: ['martial'], leader: ['stalwart'] },
+  sanctuary: { name: 'Sanctuary',    icon: '⛪', reaction: true, weight: 0.5, desc: 'While armed: the next plague, famine, bandit raid or storm to strike you is prevented.',            nation: ['agrarian'], leader: ['pious', 'beloved'] },
+  bribe:     { name: 'Bribe',        icon: '💰', reaction: true, weight: 0.4, desc: 'While armed: the next war declared on you is cancelled (the aggressor keeps the peace).',          nation: ['mercantile'], leader: ['cunning', 'frugal'] },
+  ambush:    { name: 'Ambush',       icon: '🪤', reaction: true, weight: 0.5, desc: 'While armed: the next March or Sea Raid against you fails and the attacker still pays.',           nation: ['wanderers', 'martial'], leader: ['warlike', 'stalwart'] },
   // --- bonus cards (instant, free) ---
   caravan:     { name: 'Caravan',        icon: '🐪', weight: 0.6, desc: 'Gain 15 gold, plus 2 per settlement.',                           nation: ['mercantile'],              leader: ['frugal', 'cunning'] },
   taxes:       { name: 'Tax Collectors', icon: '🪙', weight: 0.5, desc: 'Gain 3 gold per settlement.',                                     nation: ['mercantile', 'scholarly'], leader: ['frugal'] },
@@ -144,6 +155,41 @@ const CARDS = {
 };
 const CARD_FOR_ACTION = {};
 for (const id in CARDS) if (CARDS[id].action) CARD_FOR_ACTION[CARDS[id].action] = id;
+
+// Card market: buy a random card from a category (gold, no action).
+const MARKET = {
+  build:     { name: 'Builders\' guild', icon: '🔨', ids: ['farm', 'mine', 'lumber', 'pasture', 'fishery', 'road', 'castle', 'harbor', 'greatwork'] },
+  growth:    { name: 'Land office',      icon: '🗺️', ids: ['expand', 'settle', 'charter', 'colonists'] },
+  diplomacy: { name: 'Embassy',          icon: '🕊️', ids: ['trade', 'treaty', 'alliance', 'edict', 'envoys', 'marriage'] },
+  war:       { name: 'War council',      icon: '⚔️', ids: ['war', 'march', 'raid', 'militia', 'ambush', 'mercenaries'] },
+  fortune:   { name: 'Fortune teller',   icon: '🔮', ids: ['caravan', 'taxes', 'prospectors', 'bumper', 'migrants', 'festival', 'rally', 'sanctuary', 'bribe'] },
+};
+const MARKET_BASE_COST = 20, MARKET_PER_TURN = 2;
+
+// Card mastery: playing a card often improves it.
+const MASTERY_TIERS = [5, 12]; // plays needed for tier 1 and tier 2
+
+// Wonders: five Great Work contributions each; each may be built once in the world.
+const WONDERS = {
+  temple:     { name: 'Great Temple',   icon: '⛩️', desc: '+12 contentment. +40 score.' },
+  lighthouse: { name: 'Lighthouse',     icon: '🗼', desc: 'Harbours yield +2 gold; you can trade across the sea without a harbour. +30 score.' },
+  aqueduct:   { name: 'Aqueduct',       icon: '🏗️', desc: '+30% growth. +30 score.' },
+  colossus:   { name: 'Colossus',       icon: '🗿', desc: '+3 attack and +2 defence. +30 score.' },
+  library:    { name: 'Grand Library',  icon: '📚', desc: 'Hold one more card in hand. +30 score.' },
+  royalroad:  { name: 'Royal Road',     icon: '🛣️', desc: 'Roads are free and settlements connected by road yield +2 gold. +30 score.' },
+};
+const WONDER_STEPS = 5;
+
+// Unlockable cards (kept in the browser profile across games).
+const UNLOCKS = {
+  colonists:   { card: 'colonists',   how: 'Finish a game' },
+  raid:        { card: 'raid',        how: 'Build two harbours in one game' },
+  mercenaries: { card: 'mercenaries', how: 'Conquer a settlement' },
+  marriage:    { card: 'marriage',    how: 'Win a game' },
+};
+
+// Contentment: 50 baseline, +8 per worked luxury (partners' luxuries count half), minus sprawl and war.
+const LUXURY_BONUS = 8;
 
 const COSTS = {
   village: { mat: 60, gold: 15 },
@@ -220,3 +266,4 @@ function genLeaderName(rng) {
 function genTownName(rng) {
   return rng.pick(NAME_PARTS.pre) + rng.pick(NAME_PARTS.mid) + rng.pick(NAME_PARTS.townSuf);
 }
+

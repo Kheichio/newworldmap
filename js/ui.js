@@ -1,4 +1,4 @@
-// UI: setup screen, card tray, targeting, HUD panels, map interaction, tooltips, game-over screen.
+// UI: setup screen, card tray, targeting, HUD panels, map interaction, tooltips, save/load, profile.
 
 const UI = {
   game: null, renderer: null, player: null,
@@ -11,6 +11,7 @@ const UI = {
   report: [],          // events since the player's last move
   newIds: new Set(),   // card ids drawn this turn (for the "new" ribbon)
   turnLogStart: undefined,
+  profile: null,
 };
 
 const $ = id => document.getElementById(id);
@@ -32,10 +33,65 @@ const costHtml = c => {
   return parts.join(' ') || 'free';
 };
 const flagImg = (n, cls = '') => n.flagURL ? `<img class="flag ${cls}" src="${n.flagURL}" alt="">` : `<span class="swatch" style="background:${n.color}"></span>`;
-const ACTION_SOUNDS = { expand: 'expand', village: 'village', upgrade: 'upgrade', farm: 'build', mine: 'build', lumber: 'build', pasture: 'build', fishery: 'build', road: 'build', harbor: 'build', castle: 'castle', trade: 'trade', declare_war: 'war', conquer: 'conquer', peace: 'peace', edict: 'edict' };
+const ACTION_SOUNDS = { expand: 'expand', village: 'village', colonize: 'village', upgrade: 'upgrade', farm: 'build', mine: 'build', lumber: 'build', pasture: 'build', fishery: 'build', road: 'build', harbor: 'build', castle: 'castle', greatwork: 'castle', trade: 'trade', alliance: 'trade', marriage: 'peace', declare_war: 'war', conquer: 'conquer', raid: 'conquer', peace: 'peace', edict: 'edict' };
+
+// ---------------- Profile (unlocks across games) ----------------
+function loadProfile() {
+  UI.profile = load('profile', { games: 0, wins: 0, unlocked: [] });
+  return UI.profile;
+}
+function unlock(key, quiet = false) {
+  const p = UI.profile;
+  if (p.unlocked.includes(key)) return false;
+  p.unlocked.push(key);
+  store('profile', p);
+  if (UI.game) UI.game.pool.add(UNLOCKS[key].card);
+  if (!quiet) { toast(`🔓 New card unlocked: ${CARDS[UNLOCKS[key].card].icon} ${CARDS[UNLOCKS[key].card].name} — ${UNLOCKS[key].how.toLowerCase()}.`); Sound.play('win'); }
+  renderUnlocks();
+  return true;
+}
+function checkMilestones() {
+  const p = UI.player;
+  if (!p) return;
+  if (p.harborsBuilt >= 2) unlock('raid');
+  if (p.settlementsTaken >= 1) unlock('mercenaries');
+}
+function renderUnlocks() {
+  const el = $('unlocks');
+  if (!el) return;
+  const pr = UI.profile;
+  el.innerHTML = `<div class="group-title">Card collection — ${pr.games} game${pr.games === 1 ? '' : 's'} played, ${pr.wins} won</div><div class="unlock-grid">` +
+    Object.entries(UNLOCKS).map(([k, u]) => { const c = CARDS[u.card], has = pr.unlocked.includes(k); return `<div class="unlock${has ? ' has' : ''}" title="${esc(c.desc)}"><span class="ui">${c.icon}</span><span class="un">${esc(c.name)}</span><span class="uh">${has ? 'unlocked' : esc(u.how)}</span></div>`; }).join('') + '</div>';
+}
+
+// ---------------- Save / load ----------------
+function saveGame() {
+  if (!UI.game || (UI.game.over && !UI.game.continued)) return;
+  try {
+    const data = UI.game.serialize();
+    data.ui = { flagSeed: UI.player.flagSeed || 0, cam: UI.renderer ? { x: UI.renderer.cam.x, y: UI.renderer.cam.y, zoom: UI.renderer.cam.zoom } : null, report: UI.report, newIds: Array.from(UI.newIds) };
+    localStorage.setItem('nwm.save', JSON.stringify(data));
+  } catch (e) { /* storage full or unavailable */ }
+}
+function hasSave() { try { return !!localStorage.getItem('nwm.save'); } catch (e) { return false; } }
+function loadGame() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem('nwm.save')); } catch (e) { data = null; }
+  if (!data) { toast('No saved game found.', true); return; }
+  try {
+    const game = Game.deserialize(data);
+    for (const key of UI.profile.unlocked) game.pool.add(UNLOCKS[key].card);
+    beginGame(game, data.ui || {});
+    toast(`Saved game restored — turn ${game.turn}.`);
+  } catch (e) {
+    console.error(e);
+    toast('The saved game could not be loaded (it may be from an older version).', true);
+  }
+}
 
 // ---------------- Setup screen ----------------
 function initSetup() {
+  loadProfile();
   const rng = new RNG(Date.now());
   $('in-nation').value = genNationName(rng);
   $('in-leader').value = genLeaderName(rng);
@@ -69,7 +125,11 @@ function initSetup() {
   $('in-type').innerHTML = Object.entries(MAP_TYPES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
   $('in-size').innerHTML = Object.entries(MAP_SIZES).map(([k, v]) => `<option value="${k}" ${k === 'small' ? 'selected' : ''}>${v.name}</option>`).join('');
   updateTraitPreview();
+  renderUnlocks();
   $('btn-start').onclick = startGame;
+  const cont = $('btn-continue-save');
+  cont.classList.toggle('hidden', !hasSave());
+  cont.onclick = loadGame;
 }
 
 function updateTraitPreview() {
@@ -94,21 +154,32 @@ function startGame() {
     player: { name: $('in-nation').value.trim() || 'My Nation', leaderName: $('in-leader').value.trim() || 'The Leader', colorId: UI.selectedColor, leaderTrait: ltrait },
     aiCount: parseInt($('in-ai').value, 10),
     maxTurns: Math.max(30, Math.min(500, parseInt($('in-turns').value, 10) || 150)),
+    unlocked: UI.profile.unlocked,
   });
+  const player = game.nations[0];
+  player.flagSeed = UI.setupFlagSeed || 0;
+  const first = { kind: 'gold', msg: `${player.name} is founded under ${player.leader.name}. Seed: ${seed}` };
+  game.addLog(first.msg, player);
+  beginGame(game, { flagSeed: player.flagSeed, report: [first], newIds: player.newCards || [] });
+}
+
+// Common entry for new and loaded games.
+function beginGame(game, ui) {
   UI.game = game;
-  UI.player = game.nations[0];
-  UI.player.flagSeed = UI.setupFlagSeed || 0;
+  UI.player = game.nations.find(n => n.isPlayer) || game.nations[0];
+  UI.player.flagSeed = ui.flagSeed || UI.player.flagSeed || 0;
   UI.mode = null; UI.modeCard = -1; UI.selCard = -1; UI.turnLogStart = undefined;
+  UI.gameCounted = false;
   for (const n of game.nations) makeFlag(n);
-  UI.newIds = new Set(UI.player.newCards || []);
-  UI.report = [{ kind: 'gold', msg: `${UI.player.name} is founded under ${UI.player.leader.name}. Seed: ${seed}` }];
-  game.addLog(UI.report[0].msg, UI.player);
+  UI.newIds = new Set(ui.newIds || []);
+  UI.report = ui.report || [];
   $('setup').classList.add('hidden');
   $('app').classList.remove('hidden');
   initMap();
-  centerOnHome();
+  if (ui.cam) { Object.assign(UI.renderer.cam, ui.cam); UI.renderer.clampCamera(); UI.needsDraw = true; } else centerOnHome();
   selectTile(null);
   refreshAll();
+  saveGame();
 }
 
 // ---------------- Map ----------------
@@ -144,8 +215,12 @@ function initLegend() {
 function centerOnHome() {
   const g = UI.game, p = UI.player;
   const i = p.capital >= 0 ? p.capital : (p.owned.size ? p.owned.values().next().value : Math.floor(g.tiles.length / 2));
-  UI.renderer.centerOn(g.tiles[i]);
+  panTo(g.tiles[i], false);
+}
+function panTo(t, select = true) {
+  UI.renderer.centerOn(t);
   UI.renderer.clampCamera();
+  if (select) selectTile(t);
   UI.needsDraw = true;
 }
 
@@ -209,7 +284,7 @@ function bindMapEvents(canvas) {
     else if (k === 'l') { $('legend').classList.toggle('hidden'); return; }
     else if (k === 'h') { $('help').classList.toggle('hidden'); return; }
     else if (k === 'm') { $('btn-mute').click(); return; }
-    else if (k >= '1' && k <= '6') { const i = parseInt(k, 10) - 1; if (i < UI.player.hand.length) selectCard(i); return; }
+    else if (k >= '1' && k <= '7') { const i = parseInt(k, 10) - 1; if (i < UI.player.hand.length) selectCard(i); return; }
     else return;
     R().clampCamera(); UI.needsDraw = true;
   });
@@ -232,10 +307,17 @@ function mapClick(t) {
 // ---------------- Targeting ----------------
 function validTargets(action) {
   const g = UI.game, p = UI.player, set = new Set();
-  const cands = Array.from(p.owned, i => g.tiles[i]);
-  if (['expand', 'conquer', 'village'].includes(action)) {
-    const seen = new Set(p.owned);
-    for (const i of p.owned) for (const nb of g.neighbors(g.tiles[i])) if (!seen.has(nb.i)) { seen.add(nb.i); cands.push(nb); }
+  let cands;
+  if (action === 'colonize' || action === 'raid') {
+    cands = [];
+    const seen = new Set();
+    for (const i of p.settlements) if (g.tiles[i].harbor) for (const t of g.ring(g.tiles[i], 6)) if (!seen.has(t.i)) { seen.add(t.i); cands.push(t); }
+  } else {
+    cands = Array.from(p.owned, i => g.tiles[i]);
+    if (['expand', 'conquer', 'village'].includes(action)) {
+      const seen = new Set(p.owned);
+      for (const i of p.owned) for (const nb of g.neighbors(g.tiles[i])) if (!seen.has(nb.i)) { seen.add(nb.i); cands.push(nb); }
+    }
   }
   for (const t of cands) if (g.checkAction(p, action, t).ok) set.add(t.i);
   return set;
@@ -267,14 +349,13 @@ function selectCard(idx) {
   renderTray();
 }
 
-// Start playing the card at hand index idx: instant, tile targeting, or a chooser for nations / edicts.
 function beginPlay(idx) {
   const g = UI.game, p = UI.player;
   const id = p.hand[idx];
   if (!id) return;
   const c = CARDS[id];
   if (g.over && !g.continued) { $('gameover').classList.remove('hidden'); return; }
-  if (!c.action) { playCardFlow(idx, null, null); return; }
+  if (c.reaction || !c.action) { playCardFlow(idx, null, null); return; }
   if (p.ap <= 0) { toast('No actions left this turn — end your turn first (Space).', true); Sound.play('error'); return; }
   if (c.target === 'tile') {
     const targets = validTargets(c.action);
@@ -288,6 +369,8 @@ function noTargetReason(action) {
   const g = UI.game, p = UI.player;
   switch (action) {
     case 'conquer': return g.enemies(p).length ? 'No enemy border tile can be taken right now — check cost, attack and defence.' : 'You are not at war with anyone. Play Casus Belli first.';
+    case 'raid': return !g.hasHarbor(p) ? 'Sea raids need a harbour.' : g.enemies(p).length ? 'No enemy coastal tile within 6 of your harbours can be taken.' : 'You are not at war with anyone.';
+    case 'colonize': return !g.hasHarbor(p) ? 'Colonists need a harbour to sail from.' : 'No free coastal site within 6 tiles of your harbours (or the settlement limit is reached).';
     case 'village': return p.settlements.length >= g.settlementCap(p) ? `Settlement limit reached (${p.settlements.length}/${g.settlementCap(p)}) — raise a town or city first.` : 'No valid site (needs land 3 tiles from other settlements) or not enough resources.';
     case 'expand': return `No free tile can be claimed — expansion costs 🪙${g.expandCost(p).gold}.`;
     case 'upgrade': return 'No settlement has enough people to upgrade, or you cannot afford it.';
@@ -296,20 +379,23 @@ function noTargetReason(action) {
   }
 }
 
-function playCardFlow(idx, tile, target) {
+function playCardFlow(idx, tile, target, extra) {
   const g = UI.game, p = UI.player;
   const id = p.hand[idx];
   if (!id) return;
   const c = CARDS[id];
   const seqBefore = g.logSeq || 0;
-  const r = g.playCard(p, idx, tile, target);
+  const r = g.playCard(p, idx, tile, target, extra);
   if (!r.ok) { toast(r.why, true); Sound.play('error'); return; }
-  Sound.play(c.action ? (ACTION_SOUNDS[c.action] || 'build') : 'card');
+  Sound.play(c.reaction ? 'card' : c.action ? (ACTION_SOUNDS[c.action] || 'build') : 'card');
   if (UI.turnLogStart === undefined) UI.turnLogStart = seqBefore;
   UI.selCard = -1;
   const left = p.ap;
-  toast(`${c.icon} ${c.name}: ${r.msg.charAt(0).toUpperCase() + r.msg.slice(1)}${c.action ? `  —  ${left} action${left === 1 ? '' : 's'} left` : ''}`);
+  if (c.reaction) toast(`${c.icon} ${c.name} armed — it will trigger during the rivals' phase.`);
+  else toast(`${c.icon} ${c.name}: ${r.msg.charAt(0).toUpperCase() + r.msg.slice(1)}${c.action ? `  —  ${left} action${left === 1 ? '' : 's'} left` : ''}`);
+  checkMilestones();
   refreshAll();
+  saveGame();
   if (g.over && !g.continued) showGameOver();
 }
 
@@ -322,67 +408,155 @@ function discardCard(idx) {
   toast(`${CARDS[r.id].icon} ${CARDS[r.id].name} discarded — a new card arrives next turn.`);
   renderTray();
   renderTilePanel();
+  saveGame();
 }
 
-// Chooser for nation- and edict-targeted cards.
+// Chooser for nation-, edict- and wonder-targeted cards, and the market.
 function openPicker(idx) {
   const g = UI.game, p = UI.player;
   const c = CARDS[p.hand[idx]];
-  const picker = $('picker'), body = $('picker-body');
-  $('picker-title').innerHTML = `${c.icon} ${esc(c.name)} — ${c.target === 'edict' ? 'choose an edict' : 'choose a nation'}`;
+  const body = $('picker-body');
+  $('picker-title').innerHTML = `${c.icon} ${esc(c.name)} — ${c.target === 'edict' ? 'choose an edict' : c.target === 'wonder' ? 'choose a wonder' : 'choose a nation'}`;
   let html = '';
   if (c.target === 'edict') {
     for (const id in EDICTS) {
       const E = EDICTS[id], chk = g.checkAction(p, 'edict', null, id);
       html += `<button class="action pick" data-target="${id}" ${chk.ok ? '' : 'disabled'}><span class="al">${E.icon} ${E.name}</span><span class="cost">${costHtml(chk.cost)}</span><span class="sub${chk.ok ? '' : ' neg'}">${esc(E.desc)}${chk.why ? ' · ' + esc(chk.why) : ''}</span></button>`;
     }
+  } else if (c.target === 'wonder') {
+    for (const id in WONDERS) {
+      const W = WONDERS[id], chk = g.checkAction(p, 'greatwork', null, id);
+      const prog = p.wonderId === id ? `${p.wonderProgress}/${WONDER_STEPS} built · ` : '';
+      html += `<button class="action pick${p.wonderId === id ? ' gold' : ''}" data-target="${id}" ${chk.ok ? '' : 'disabled'}><span class="al">${W.icon} ${W.name}</span><span class="cost">${costHtml(chk.cost)}</span><span class="sub${chk.ok ? '' : ' neg'}">${prog}${esc(W.desc)}${chk.why ? ' · ' + esc(chk.why) : ''}</span></button>`;
+    }
   } else {
     for (const n of g.nations) {
       if (n === p || !n.alive) continue;
-      const chk = g.checkAction(p, c.action, null, n.id);
       const rel = g.rel(p, n), relL = g.relLabel(rel);
+      const chk = g.checkAction(p, c.action, null, n.id);
       html += `<button class="action pick" data-target="${n.id}" ${chk.ok ? '' : 'disabled'}><span class="al">${flagImg(n)} ${esc(n.name)}</span><span class="cost">${costHtml(chk.cost)}</span><span class="sub${chk.ok ? '' : ' neg'}"><span class="rel-${relL}">${relL}</span> (${Math.round(rel)}) · attack ${g.attackStrength(n)}${chk.why ? ' · ' + esc(chk.why) : ''}</span></button>`;
+      if (c.action === 'peace') {
+        const ct = g.checkAction(p, 'peace', null, n.id, 'tribute');
+        html += `<button class="action pick gold" data-target="${n.id}" data-extra="tribute" ${ct.ok ? '' : 'disabled'}><span class="al">👑 Demand tribute from ${esc(n.name)}</span><span class="cost">${costHtml(ct.cost)}</span><span class="sub${ct.ok ? '' : ' neg'}">${esc(ct.why || '')}</span></button>`;
+      }
     }
   }
   body.innerHTML = html || '<div class="empty">No valid choice right now.</div>';
   for (const b of body.querySelectorAll('button[data-target]')) b.onclick = () => {
-    const target = c.target === 'edict' ? b.dataset.target : parseInt(b.dataset.target, 10);
+    const target = (c.target === 'edict' || c.target === 'wonder') ? b.dataset.target : parseInt(b.dataset.target, 10);
     if (c.action === 'declare_war' && !confirm(`Declare war on ${g.nation(target).name}? Trade with them ends and relations sour.`)) return;
     closePicker();
-    playCardFlow(idx, null, target);
+    playCardFlow(idx, null, target, b.dataset.extra);
   };
-  picker.classList.remove('hidden');
+  $('picker').classList.remove('hidden');
   $('picker-close').onclick = closePicker;
 }
 function closePicker() { $('picker').classList.add('hidden'); }
 
+function openMarket() {
+  const g = UI.game, p = UI.player;
+  const cost = g.marketCost(p);
+  $('picker-title').innerHTML = `🏪 Market — a random card from a stall for 🪙${cost} (${MARKET_PER_TURN - p.marketBuys} purchase${MARKET_PER_TURN - p.marketBuys === 1 ? '' : 's'} left this turn)`;
+  let html = '';
+  for (const key in MARKET) {
+    const m = MARKET[key];
+    const ids = m.ids.filter(id => g.pool.has(id));
+    const can = p.marketBuys < MARKET_PER_TURN && p.hand.length < g.handMax(p) && p.gold >= cost;
+    html += `<button class="action pick" data-stall="${key}" ${can ? '' : 'disabled'}><span class="al">${m.icon} ${m.name}</span><span class="cost">🪙${cost}</span><span class="sub">${ids.map(id => CARDS[id].icon + ' ' + CARDS[id].name).join(', ')}</span></button>`;
+  }
+  if (p.hand.length >= g.handMax(p)) html += '<div class="empty">Your hand is full — discard a card to make room.</div>';
+  $('picker-body').innerHTML = html;
+  for (const b of $('picker-body').querySelectorAll('button[data-stall]')) b.onclick = () => {
+    const r = g.buyCard(p, b.dataset.stall);
+    if (!r.ok) { toast(r.why, true); Sound.play('error'); return; }
+    Sound.play('draw');
+    toast(`🏪 Bought ${CARDS[r.id].icon} ${CARDS[r.id].name} for ${r.cost} gold.`);
+    closePicker(); refreshAll(); saveGame();
+  };
+  $('picker').classList.remove('hidden');
+  $('picker-close').onclick = closePicker;
+  $('picker-close').textContent = '✕ Close';
+}
+
+// What exactly a card would do right now — shown on the card and in its tooltip.
+function cardHint(id) {
+  const g = UI.game, p = UI.player, c = CARDS[id];
+  if (c.reaction) return p.armed.includes(id) ? 'already armed' : 'arm for free';
+  if (!c.action) {
+    const setts = p.settlements.length, boost = 1 + 0.25 * g.masteryTier(p, id);
+    switch (id) {
+      case 'caravan': return `+${Math.round((15 + 2 * setts) * boost)} gold`;
+      case 'taxes': return `+${Math.round(3 * setts * boost)} gold`;
+      case 'prospectors': return `+${Math.round((20 + 2 * setts) * boost)} materials`;
+      case 'bumper': return `+${Math.round(15 * boost)} growth`;
+      case 'migrants': { const s = p.settlements.map(i => g.tiles[i].settlement).filter(s => s.pop < SETTLEMENTS[s.type].maxPop).sort((a, b) => a.pop - b.pop)[0]; return s ? `+1 person in ${s.name}` : '+10 growth (no room)'; }
+      case 'envoys': return `+${Math.round(6 * boost)} relations with ${g.nations.filter(o => o !== p && o.alive && g.rel(p, o) < 50).length} nations`;
+      case 'festival': return p.edict ? `${EDICTS[p.edict].name} +4 turns` : '+8 growth';
+      case 'rally': return '+1 action now';
+      case 'mercenaries': return p.gold >= 30 ? '+5 attack, −30 gold' : 'needs 30 gold';
+    }
+    return '';
+  }
+  if (c.target === 'tile') {
+    const n = validTargets(c.action).size;
+    if (!n) return 'no valid tile';
+    if (c.action === 'upgrade') { const s = p.settlements.map(i => g.tiles[i]).find(t => g.checkAction(p, 'upgrade', t).ok); return s ? `${s.settlement.name} → ${SETTLEMENTS[SETTLEMENTS[s.settlement.type].next].name.toLowerCase()}` : ''; }
+    if (c.action === 'expand') {
+      let best = null, bv = -1;
+      for (const i of validTargets('expand')) { const v = g.tileValue(g.tiles[i], p); if (v > bv) { bv = v; best = g.tiles[i]; } }
+      return best ? `${n} tiles · best: ${TERRAINS[best.terrain].name.toLowerCase()}${best.resource ? ' with ' + RESOURCE_BY_ID[best.resource].name.toLowerCase() : ''}` : '';
+    }
+    return `${n} valid tile${n === 1 ? '' : 's'}`;
+  }
+  if (c.target === 'nation') {
+    const ok = g.nations.filter(o => o !== p && o.alive && g.checkAction(p, c.action, null, o.id).ok);
+    return ok.length ? `${ok.length} nation${ok.length === 1 ? '' : 's'}: ${ok.map(o => o.colorName).join(', ')}` : 'no eligible nation';
+  }
+  if (c.target === 'wonder') return p.wonderId ? `${WONDERS[p.wonderId].name} ${p.wonderProgress}/${WONDER_STEPS}` : `${Object.keys(WONDERS).filter(w => g.wondersBuilt[w] === undefined).length} wonders available`;
+  if (c.target === 'edict') return p.edict ? `replaces ${EDICTS[p.edict].name}` : 'choose one of 4 edicts';
+  return '';
+}
+
 function renderTray() {
   const g = UI.game, p = UI.player;
-  const hand = $('hand'), note = $('tray-note');
-  note.innerHTML = `${p.hand.length} / ${HAND_MAX} cards · <b>${p.ap}</b> action${p.ap === 1 ? '' : 's'} left · click a card to play, keep or discard it`;
+  const hand = $('hand'), note = $('tray-note'), armed = $('armed');
+  note.innerHTML = `${p.hand.length} / ${g.handMax(p)} cards · <b>${p.ap}</b> action${p.ap === 1 ? '' : 's'} left · click a card to play, keep or discard it`;
+  armed.classList.toggle('hidden', !p.armed.length);
+  armed.innerHTML = p.armed.length ? `<span class="armed-title">Armed:</span> ${p.armed.map(id => `<span class="armed-card" title="${esc(CARDS[id].desc)}">${CARDS[id].icon} ${esc(CARDS[id].name)}</span>`).join('')}` : '';
   hand.innerHTML = p.hand.map((id, i) => {
     const c = CARDS[id];
     const affine = c.nation.includes(p.trait) || c.leader.includes(p.leader.trait);
     const sel = i === UI.selCard;
     const playing = UI.mode && UI.modeCard === i;
+    const tier = g.masteryTier(p, id), plays = (p.mastery && p.mastery[id]) || 0;
+    const nextTier = tier < 2 ? MASTERY_TIERS[tier] : null;
     let cost = '';
     if (c.action) {
-      const chk = c.target === 'tile' ? null : g.checkAction(p, c.action, null, c.target === 'edict' ? 'harvest' : undefined);
       if (c.action === 'expand') cost = `🪙${g.expandCost(p).gold}`;
       else if (c.action === 'village') cost = costHtml(g.scaleCost(COSTS.village, g.costMul(p, 'village')));
+      else if (c.action === 'colonize') cost = costHtml(g.scaleCost(COSTS.village, g.costMul(p, 'village') * 1.25));
       else if (c.action === 'castle') cost = costHtml(g.scaleCost(COSTS.castle, g.costMul(p, 'castle')));
       else if (c.action === 'road') cost = costHtml(g.scaleCost(COSTS.road, g.costMul(p, 'road')));
       else if (c.action === 'harbor') cost = costHtml(g.scaleCost(COSTS.harbor, g.costMul(p, 'harbor')));
       else if (c.action === 'conquer') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer')));
-      else if (IMPROVEMENTS[c.action]) cost = costHtml(g.scaleCost(IMPROVEMENTS[c.action].cost, g.costMul(p, 'improve')));
+      else if (c.action === 'raid') cost = costHtml(g.scaleCost(COSTS.conquer, g.costMul(p, 'conquer') * 0.6));
+      else if (c.action === 'greatwork') cost = costHtml(g.scaleCost({ mat: 50 }, 1 + p.owned.size / 100));
+      else if (IMPROVEMENTS[c.action]) cost = costHtml(g.scaleCost(IMPROVEMENTS[c.action].cost, g.costMul(p, 'improve') * (1 - 0.12 * tier)));
       else if (c.action === 'upgrade') cost = 'varies';
-      else if (chk) cost = costHtml(chk.cost);
+      else if (c.action === 'trade') cost = costHtml(COSTS.trade);
+      else if (c.action === 'peace') cost = costHtml(COSTS.peace);
+      else if (c.action === 'edict') cost = costHtml(g.scaleCost(COSTS.edict, 1 + p.owned.size / 100));
+      else cost = 'free';
     }
-    return `<div class="card${sel ? ' sel' : ''}${playing ? ' playing' : ''}${affine ? ' affine' : ''}${UI.newIds.has(id) ? ' new' : ''}${c.action ? '' : ' bonus'}" data-idx="${i}" title="${esc(c.desc)}${affine ? ' (favoured by your traits)' : ''}">
-      <span class="ck">${c.action ? 'action' : 'bonus · free'}</span>
+    const hint = cardHint(id);
+    const tip = `${c.desc}${affine ? ' Favoured by your traits.' : ''}${hint ? ' Now: ' + hint + '.' : ''} Mastery: ${plays} play${plays === 1 ? '' : 's'}${nextTier ? `, tier ${tier + 1} at ${nextTier}` : ' (max)'}.`;
+    const kind = c.reaction ? 'reaction · free' : c.action ? 'action' : 'bonus · free';
+    return `<div class="card${sel ? ' sel' : ''}${playing ? ' playing' : ''}${affine ? ' affine' : ''}${UI.newIds.has(id) ? ' new' : ''}${c.reaction ? ' reaction' : c.action ? '' : ' bonus'}" data-idx="${i}" title="${esc(tip)}">
+      <span class="ck">${kind}</span>${tier ? `<span class="tier">${'★'.repeat(tier)}</span>` : ''}
       <span class="ci">${c.icon}</span><span class="cn">${esc(c.name)}</span><span class="cd">${esc(c.desc)}</span>
+      ${hint ? `<span class="ch">${esc(hint)}</span>` : ''}
       ${cost ? `<span class="cc">${cost}</span>` : ''}
-      ${sel ? `<div class="card-actions"><button class="btn small gold" data-play="${i}">${c.action ? (c.target === 'tile' ? 'Play — choose tile' : 'Play — choose') : 'Play now'}</button><button class="btn small" data-keep="${i}">Keep</button><button class="btn small" data-discard="${i}">Discard</button></div>` : ''}
+      ${sel ? `<div class="card-actions"><button class="btn small gold" data-play="${i}">${c.reaction ? 'Arm' : c.action ? (c.target === 'tile' ? 'Play — choose tile' : 'Play — choose') : 'Play now'}</button><button class="btn small" data-keep="${i}">Keep</button><button class="btn small" data-discard="${i}">Discard</button></div>` : ''}
     </div>`;
   }).join('') || '<div class="empty">Your hand is empty — new cards arrive next turn.</div>';
   for (const el of hand.querySelectorAll('.card')) el.onclick = e => { if (e.target.closest('button')) return; selectCard(parseInt(el.dataset.idx, 10)); };
@@ -411,7 +585,9 @@ function endTurn() {
   UI.newIds = new Set(p.newCards || []);
   UI.selCard = -1;
   buildReport(logStart, before);
+  checkMilestones();
   refreshAll();
+  saveGame();
   if (!g.over) {
     Sound.play('turn');
     if (UI.report.some(e => e.kind === 'bad')) setTimeout(() => Sound.play('bad'), 350);
@@ -421,42 +597,71 @@ function endTurn() {
   if (g.over && !g.continued) showGameOver();
 }
 
-// Accepting an offered peace is free and needs no card.
+// Free diplomatic answers (no card, no action): accepting peace or a pact, breaking a pact.
 function acceptPeace(id) {
   const g = UI.game, p = UI.player;
   const r = g.doAction(p, 'peace', null, id);
   if (!r.ok) { toast(r.why, true); Sound.play('error'); return; }
   Sound.play('peace');
   toast(`${p.name} ${r.msg}`);
-  refreshAll();
+  refreshAll(); saveGame();
+}
+function acceptPact(id) {
+  const g = UI.game, p = UI.player, o = g.nation(id);
+  g.formAlliance(p, o);
+  if (p.allianceOffers) p.allianceOffers.delete(id);
+  g.addLog(`${p.name} forms a pact with ${o.name}.`, p);
+  Sound.play('trade');
+  refreshAll(); saveGame();
+}
+function breakPact(id) {
+  const g = UI.game, p = UI.player, o = g.nation(id);
+  if (!confirm(`Break the pact with ${o.name}? Relations will fall by 30.`)) return;
+  g.breakAlliance(p, o, `${p.name} withdraws`);
+  g.shiftRel(p, o, -30);
+  Sound.play('bad');
+  refreshAll(); saveGame();
+}
+
+// Try to find a map location for a log message (coordinates, settlement names, nation capitals).
+function locateMessage(msg) {
+  const g = UI.game;
+  const m = msg.match(/\((\d+), (\d+)\)/);
+  if (m) { const t = g.tileAt(parseInt(m[1], 10), parseInt(m[2], 10)); if (t) return t.i; }
+  for (const t of g.tiles) if (t.settlement && msg.includes(t.settlement.name)) return t.i;
+  for (const n of g.nations) if (n.capital >= 0 && !n.isPlayer && msg.includes(n.name)) return n.capital;
+  return null;
 }
 
 function buildReport(logStart, before) {
   const g = UI.game, p = UI.player;
   const ev = [];
   const inc = p.income;
-  ev.push({ kind: 'gold', msg: `Income: ${fmtDelta(inc.gold)} gold, ${fmtDelta(inc.mat)} materials, food ${fmtDelta(inc.net)} after feeding ${inc.pop} people.` });
+  ev.push({ kind: 'gold', msg: `Income: ${fmtDelta(inc.gold)} gold, ${fmtDelta(inc.mat)} materials, food ${fmtDelta(inc.net)} after feeding ${inc.pop} people.${inc.tributeIn ? ` Tribute received: ${inc.tributeIn}.` : ''}${inc.tributeOut ? ` Tribute paid: ${inc.tributeOut}.` : ''}` });
   for (const e of g.logSince(logStart)) {
     const m = e.msg;
     if (!(e.nation === p.id || m.includes(p.name))) continue;
-    if (e.nation === p.id && /^.* plays /.test(m) === false && /waits and saves/.test(m)) continue;
+    if (e.nation === p.id && /waits and saves|arms /.test(m)) continue;
     let kind = 'neutral';
     if (/^Event:/.test(m)) kind = 'event';
-    else if (/declares war on/.test(m)) kind = m.startsWith(p.name) ? 'neutral' : 'bad';
-    else if (/conquers|seizes|fallen/.test(m)) kind = m.startsWith(p.name) ? 'good' : 'bad';
-    else if (/Famine|Plague|Bandits/.test(m)) kind = 'bad';
-    else if (/grows|borders|ruins|peace/.test(m)) kind = 'good';
-    else if (/trade route|Plunder/.test(m)) kind = 'gold';
-    ev.push({ kind, msg: m });
+    else if (/declares war on|lays siege/.test(m)) kind = m.startsWith(p.name) ? 'neutral' : 'bad';
+    else if (/conquers|seizes|fallen|rises up|is ambushed/.test(m)) kind = m.startsWith(p.name) ? (/is ambushed/.test(m) ? 'bad' : 'good') : 'bad';
+    else if (/Famine|Plague|Bandits|tribute/.test(m)) kind = 'bad';
+    else if (/grows|borders|ruins|peace|pact|completes|answers|averted|passes them by|bought off|springs/.test(m)) kind = 'good';
+    else if (/trade route|Plunder|buys/.test(m)) kind = 'gold';
+    ev.push({ kind, msg: m, tile: locateMessage(m) });
   }
-  for (const id of p.peaceOffers) ev.push({ kind: 'gold', msg: `${g.nation(id).name} offers peace — accept it for free in Other nations.` });
+  for (const id of p.peaceOffers) ev.push({ kind: 'gold', msg: p.tributeDemand === id ? `${g.nation(id).name} demands tribute in exchange for peace — answer in Other nations.` : `${g.nation(id).name} offers peace — accept it for free in Other nations.` });
+  if (p.allianceOffers) for (const id of p.allianceOffers) ev.push({ kind: 'gold', msg: `${g.nation(id).name} proposes a pact — accept it for free in Other nations.` });
   const gained = p.owned.size - before.tiles;
   if (gained > 0 && !ev.some(e => /borders/.test(e.msg))) ev.push({ kind: 'good', msg: `Your territory grew by ${gained} tile${gained === 1 ? '' : 's'}.` });
   for (const o of g.nations) {
     if (o === p || !o.alive) continue;
-    if (g.atWar(p, o)) ev.push({ kind: 'bad', msg: `At war with ${o.name} (their attack ${g.attackStrength(o)}, yours ${g.attackStrength(p)}).` });
-    else if (g.rel(p, o) < -40 && g.bordersNation(p, o)) ev.push({ kind: 'bad', msg: `${o.name} is hostile and shares your border — they may declare war.` });
+    if (g.atWar(p, o)) ev.push({ kind: 'bad', msg: `At war with ${o.name} (their attack ${g.attackStrength(o)}, yours ${g.attackStrength(p)}).`, tile: o.capital >= 0 ? o.capital : null });
+    else if (g.rel(p, o) < -40 && g.bordersNation(p, o)) ev.push({ kind: 'bad', msg: `${o.name} is hostile and shares your border — they may declare war.`, tile: o.capital >= 0 ? o.capital : null });
   }
+  for (const t of g.tiles) if (t.siege && t.owner === p.id) ev.push({ kind: 'bad', msg: `${t.settlement.name} is under siege by ${g.nation(t.siege.by).name}!`, tile: t.i });
+  if (p.contentment < 30) ev.push({ kind: 'bad', msg: `Your people are discontent (${p.contentment}) — unrest is growing. Work luxuries, make peace or build the Great Temple.` });
   if (UI.newIds.size) ev.push({ kind: 'neutral', msg: `New cards: ${Array.from(UI.newIds).map(id => CARDS[id].icon + ' ' + CARDS[id].name).join(', ')}.` });
   UI.report = ev;
 }
@@ -471,11 +676,13 @@ function showTooltip(t, x, y) {
   let html = `<b>${T.name}</b>`;
   if (t.river && !t.water) html += ' <span class="dim">· river</span>';
   if (t.coastal) html += ' <span class="dim">· coastal</span>';
-  if (t.resource) { const r = RESOURCE_BY_ID[t.resource]; html += `<br>${r.icon} ${r.name} <span class="dim">(${CATEGORY_NAMES[r.cat].toLowerCase()})</span>`; }
+  if (t.resource) { const r = RESOURCE_BY_ID[t.resource]; html += `<br>${r.icon} ${r.name} <span class="dim">(${CATEGORY_NAMES[r.cat].toLowerCase()}${r.luxury ? ', luxury' : ''})</span>`; }
   if (t.ruins) html += '<br>🏺 Ancient ruins <span class="dim">— claim to explore</span>';
   html += `<br>Yield ${yieldStr(y0)}`;
   if (t.improvement) html += ` <span class="dim">· ${IMPROVEMENTS[t.improvement].name.toLowerCase()}</span>`;
-  if (t.settlement) html += `<br>🏘️ ${esc(t.settlement.name)} — ${SETTLEMENTS[t.settlement.type].name.toLowerCase()}, pop ${t.settlement.pop}${t.settlement.capital ? ', capital' : ''}${t.harbor ? ', harbour' : ''}`;
+  if (t.settlement) html += `<br>🏘️ ${esc(t.settlement.name)} — ${SETTLEMENTS[t.settlement.type].name.toLowerCase()}, pop ${t.settlement.pop}${t.settlement.capital ? ', capital' : ''}${t.harbor ? ', harbour' : ''}${t.owner === null ? ' <span class="dim">— independent</span>' : ''}`;
+  if (t.wonder) html += `<br>${WONDERS[t.wonder].icon} ${WONDERS[t.wonder].name}`;
+  if (t.siege) html += `<br>⚔️ Under siege by ${esc(g.nation(t.siege.by).name)}`;
   if (t.castle) html += '<br>🏰 Castle';
   if (owner) html += `<br><span style="color:${owner.color}">■</span> ${esc(owner.name)}${owner === UI.player && !g.isWorked(t, owner) ? ' <span class="dim">— idle, no settlement nearby</span>' : ''}`;
   else if (t.terrain !== 'ocean') html += '<br><span class="dim">Unclaimed</span>';
@@ -491,7 +698,7 @@ function toast(msg, bad = false) {
   const el = $('toast');
   el.textContent = msg; el.classList.toggle('bad', bad); el.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
 }
 
 // ---------------- Selection & tile panel ----------------
@@ -516,23 +723,25 @@ function renderTilePanel() {
   const mine = owner === p;
   let html = `<h3 class="engraved">Selected tile</h3>
     <div class="tile-head"><span class="tile-name">${esc(T.name)}</span><span class="tile-coords">${t.x}, ${t.y}</span></div>`;
-  html += `<div class="tile-owner">${owner ? `${flagImg(owner, 'tiny')} ${esc(owner.name)}${mine ? ' <b>(yours)</b>' : ''}` : '<i>Unclaimed land</i>'}</div>`;
+  html += `<div class="tile-owner">${owner ? `${flagImg(owner, 'tiny')} ${esc(owner.name)}${mine ? ' <b>(yours)</b>' : ''}` : t.settlement ? '<i>Independent settlement — claim it with Expansion</i>' : '<i>Unclaimed land</i>'}</div>`;
   const tags = [];
   if (t.river && !t.water) tags.push('<span class="tag">River</span>');
   if (t.coastal) tags.push('<span class="tag">Coastal</span>');
   if (t.road) tags.push('<span class="tag">Road</span>');
   if (t.castle) tags.push('<span class="tag">🏰 Castle</span>');
   if (t.harbor) tags.push('<span class="tag">⚓ Harbour</span>');
+  if (t.wonder) tags.push(`<span class="tag gold">${WONDERS[t.wonder].icon} ${WONDERS[t.wonder].name}</span>`);
   if (mine) tags.push(g.isWorked(t, p) ? '<span class="tag good">Worked</span>' : '<span class="tag warn">Idle — no settlement within 2</span>');
   if (t.ruins) tags.push('<span class="tag gold">🏺 Ancient ruins — claim to explore</span>');
-  if (owner && !mine) tags.push(g.atWar(p, owner) ? '<span class="tag warn">⚔️ At war</span>' : '<span class="tag">At peace</span>');
+  if (owner && !mine) tags.push(g.atWar(p, owner) ? '<span class="tag warn">⚔️ At war</span>' : g.allied(p, owner) ? '<span class="tag good">🤲 Ally</span>' : '<span class="tag">At peace</span>');
+  if (t.siege) tags.push(`<span class="tag warn">⚔️ Under siege by ${esc(g.nation(t.siege.by).name)}</span>`);
   if (t.conqueredTurn && g.turn - t.conqueredTurn < 6) tags.push('<span class="tag">Garrisoned (+3 defence)</span>');
   if (tags.length) html += `<div class="tags">${tags.join('')}</div>`;
   html += '<div class="kv">';
   html += `<span>Yield</span><span class="yield">${yieldStr(y)}${mine && !g.isWorked(t, p) ? ' <span class="note">(not collected)</span>' : ''}</span>`;
   if (t.resource) {
     const r = RESOURCE_BY_ID[t.resource];
-    html += `<span>Resource</span><span>${r.icon} <b>${r.name}</b> — ${t.improvement === r.imp ? 'fully worked' : `full yield ${yieldStr(r.yield)} with a ${IMPROVEMENTS[r.imp].name.toLowerCase()}`}</span>`;
+    html += `<span>Resource</span><span>${r.icon} <b>${r.name}</b>${r.luxury ? ' <span class="tag gold">luxury</span>' : ''} — ${t.improvement === r.imp ? 'fully worked' : `full yield ${yieldStr(r.yield)} with a ${IMPROVEMENTS[r.imp].name.toLowerCase()}`}</span>`;
   }
   if (t.improvement) html += `<span>Improved</span><span>${IMPROVEMENTS[t.improvement].icon} ${IMPROVEMENTS[t.improvement].name}</span>`;
   if (t.settlement) {
@@ -542,7 +751,6 @@ function renderTilePanel() {
   if (owner && !mine) html += `<span>Defence</span><span>${g.defenseAt(owner, t).toFixed(1)} <span class="note">vs your attack ${g.attackStrength(p)}</span></span>`;
   html += '</div>';
 
-  // Cards in hand that target tiles, and whether they can be played here.
   let items = '';
   const seen = new Set();
   p.hand.forEach((id, idx) => {
@@ -556,14 +764,13 @@ function renderTilePanel() {
       const prev = t.improvement; t.improvement = c.action; const after = g.tileYield(t, p); t.improvement = prev;
       sub = `<span class="sub">Yield becomes ${yieldStr(after)}${chk.why ? ' · ' + esc(chk.why) : ''}</span>`;
     }
-    items += `<button class="action${c.action === 'conquer' ? ' danger' : ''}" data-play="${idx}" ${chk.ok && p.ap > 0 ? '' : 'disabled'}><span class="al">${c.icon} ${esc(c.name)} — ${esc(chk.label)}</span><span class="cost">${costHtml(chk.cost)}</span>${sub}</button>`;
+    items += `<button class="action${['conquer', 'raid'].includes(c.action) ? ' danger' : ''}" data-play="${idx}" ${chk.ok && p.ap > 0 ? '' : 'disabled'}><span class="al">${c.icon} ${esc(c.name)} — ${esc(chk.label)}</span><span class="cost">${costHtml(chk.cost)}</span>${sub}</button>`;
   });
   html += `<div class="group-title">Cards you can play here</div><div class="actions">${items || '<div class="empty">None of the cards in your hand apply to this tile.</div>'}</div>`;
   panel.innerHTML = html;
   for (const b of panel.querySelectorAll('button[data-play]')) b.onclick = () => playCardFlow(parseInt(b.dataset.play, 10), t, null);
 }
 
-// Hide disabled cards that make no sense for the tile at all (keep ones that fail only on cost/requirements).
 function isIrrelevant(action, t) {
   const p = UI.player, g = UI.game;
   const mine = t.owner === p.id;
@@ -571,6 +778,8 @@ function isIrrelevant(action, t) {
   switch (action) {
     case 'expand': return t.owner !== null || t.terrain === 'ocean' || !g.isFrontier(p, t);
     case 'conquer': return !enemy || !g.isFrontier(p, t);
+    case 'raid': return !enemy || !(t.coastal || t.water) || !g.nearHarbor(p, t, 6);
+    case 'colonize': return t.owner !== null || t.water || !t.coastal || !!t.settlement || !g.nearHarbor(p, t, 6);
     case 'village': return t.water || t.terrain === 'mountains' || !!t.settlement || (!mine && !(t.owner === null && g.isFrontier(p, t)));
     case 'upgrade': return !t.settlement || !mine || !SETTLEMENTS[t.settlement.type].next;
     case 'harbor': return !t.settlement || !mine || !t.coastal || t.harbor;
@@ -599,25 +808,27 @@ function renderTopbar() {
   $('ap-info').innerHTML = `<span class="pips">${'●'.repeat(p.ap)}${'○'.repeat(Math.max(0, p.apMax - p.ap))}</span>`;
   $('ap-info').title = `${p.ap} of ${p.apMax} actions left this turn (1 + one per two cities)`;
   const need = g.growthNeed(inc.pop);
+  const mood = p.contentment >= 70 ? '😊' : p.contentment >= 45 ? '🙂' : p.contentment >= 30 ? '😐' : '😠';
+  const lux = g.luxuries(p);
   $('resbar').innerHTML = `
-    <div class="res-pill" title="Gold pays for expansion, trade, war, edicts and upkeep. Income ${inc.goldGross}, upkeep ${inc.goldUp}."><span class="icon">🪙</span><div><div class="lbl">Gold</div><div class="num">${Math.floor(p.gold)} <span class="dlt">${fmtDelta(inc.gold)}</span></div></div></div>
-    <div class="res-pill" title="Materials build improvements, roads, settlements and castles. Income ${inc.matGross}, upkeep ${inc.matUp}."><span class="icon">🪵</span><div><div class="lbl">Materials</div><div class="num">${Math.floor(p.mat)} <span class="dlt">${fmtDelta(inc.mat)}</span></div></div></div>
+    <div class="res-pill" title="Gold pays for expansion, trade, war, edicts, market and upkeep. Income ${inc.goldGross}, upkeep ${inc.goldUp}."><span class="icon">🪙</span><div><div class="lbl">Gold</div><div class="num">${Math.floor(p.gold)} <span class="dlt">${fmtDelta(inc.gold)}</span></div></div></div>
+    <div class="res-pill" title="Materials build improvements, roads, settlements, castles and wonders. Income ${inc.matGross}, upkeep ${inc.matUp}."><span class="icon">🪵</span><div><div class="lbl">Materials</div><div class="num">${Math.floor(p.mat)} <span class="dlt">${fmtDelta(inc.mat)}</span></div></div></div>
     <div class="res-pill" title="Food ${inc.food} produced, ${inc.pop} eaten. Surplus fills the growth bar (${Math.floor(p.growth)} / ${need}); shortfall causes famine."><span class="icon">🌾</span><div><div class="lbl">Food surplus</div><div class="num">${fmtDelta(inc.net)}</div></div></div>
+    <div class="res-pill" title="Contentment ${p.contentment}: 50 base, +${LUXURY_BONUS} per worked luxury (${lux.size}: ${Array.from(lux).map(l => RESOURCE_BY_ID[l].name).join(', ') || 'none'}), partners' luxuries half, Great Temple +12, festival +5; −3 per settlement beyond 4, −6 per war. Growth ×${(0.6 + p.contentment / 125).toFixed(2)}. Below 30 settlements may rebel."><span class="icon">${mood}</span><div><div class="lbl">Content</div><div class="num">${p.contentment}</div></div></div>
     <div class="res-pill" title="Population across your settlements. Growth ${Math.floor(p.growth)} / ${need}."><span class="icon">👥</span><div><div class="lbl">People</div><div class="num">${inc.pop}</div></div></div>
-    <div class="res-pill" title="Score: territory, settlements, population, castles, trade, relics and gold."><span class="icon">🏛️</span><div><div class="lbl">Score</div><div class="num">${g.score(p)}</div></div></div>`;
+    <div class="res-pill" title="Score: territory, settlements, population, castles, trade, relics, wonders, allies and gold."><span class="icon">🏛️</span><div><div class="lbl">Score</div><div class="num">${g.score(p)}</div></div></div>`;
   const ranked = g.nations.slice().sort((a, b) => g.score(b) - g.score(a));
   $('standings-sum').textContent = `Standings — you are #${ranked.indexOf(p) + 1} of ${ranked.length}`;
   $('ranking').innerHTML = ranked.map((n, i) => `<div class="rank-row${n.isPlayer ? ' me' : ''}${n.alive ? '' : ' dead'}" title="${esc(n.name)} — ${esc(n.leader.name)}">
-    <span>${i + 1}</span>${flagImg(n, 'tiny')}<span>${esc(n.colorName)}${n.isPlayer ? ' · you' : (n.alive && g.atWar(p, n) ? ' <span class="war">⚔️ war</span>' : '')}</span><span class="sc">${g.score(n)}</span></div>`).join('');
-  const end = $('btn-end');
-  end.textContent = p.ap > 0 ? `End turn ▸` : 'End turn ▸';
-  end.classList.toggle('pulse', p.ap === 0 || !p.hand.some(id => CARDS[id].action));
+    <span>${i + 1}</span>${flagImg(n, 'tiny')}<span>${esc(n.colorName)}${n.isPlayer ? ' · you' : (n.alive && g.atWar(p, n) ? ' <span class="war">⚔️ war</span>' : n.alive && g.allied(p, n) ? ' 🤲' : '')}</span><span class="sc">${g.score(n)}</span></div>`).join('');
+  $('btn-end').classList.toggle('pulse', p.ap === 0 || !p.hand.some(id => CARDS[id].action));
 }
 
 function renderReport() {
   $('report').innerHTML = UI.report.length
-    ? UI.report.map(e => `<div class="ev ${e.kind}">${e.kind === 'gold' && e.msg.startsWith('Income') ? e.msg : esc(e.msg)}</div>`).join('')
+    ? UI.report.map((e, i) => `<div class="ev ${e.kind}${e.tile !== null && e.tile !== undefined ? ' link' : ''}" data-i="${i}" ${e.tile !== null && e.tile !== undefined ? 'title="Click to show on the map"' : ''}>${e.kind === 'gold' && e.msg.startsWith('Income') ? e.msg : esc(e.msg)}</div>`).join('')
     : '<div class="empty">Nothing yet.</div>';
+  for (const el of $('report').querySelectorAll('.ev.link')) el.onclick = () => { const e = UI.report[parseInt(el.dataset.i, 10)]; if (e && e.tile !== null) panTo(UI.game.tiles[e.tile]); };
   const notable = UI.report.find(e => e.kind === 'bad') || UI.report.find(e => e.kind === 'event') || UI.report.find(e => e.kind === 'good');
   $('report-sum').textContent = notable ? notable.msg.replace(/<[^>]+>/g, '').slice(0, 48) + (notable.msg.length > 48 ? '…' : '') : `${UI.report.length} note${UI.report.length === 1 ? '' : 's'}`;
 }
@@ -628,58 +839,66 @@ function renderNationPanel() {
   const T = NATION_TRAITS[p.trait], L = LEADER_TRAITS[p.leader.trait];
   const need = g.growthNeed(inc.pop);
   const pct = Math.min(100, Math.round((p.growth / need) * 100));
+  const mastered = Object.entries(p.mastery || {}).filter(([id]) => g.masteryTier(p, id) > 0).map(([id]) => `${CARDS[id].icon} ${CARDS[id].name} ${'★'.repeat(g.masteryTier(p, id))}`);
   $('nation-sum').textContent = `${T.name} · ${L.name} · score ${g.score(p)}`;
   $('nation-body').innerHTML = `
     <div class="nation-head">${flagImg(p, 'big')}
-      <div><div class="nation-name">${esc(p.name)}</div><div class="nation-leader">${esc(p.leader.name)} · ${p.colorName} nation${p.alive ? '' : ' · <span class="neg">fallen</span>'}</div></div>
+      <div><div class="nation-name">${esc(p.name)}</div><div class="nation-leader">${esc(p.leader.name)} · ${p.colorName} nation${p.alive ? '' : ' · <span class="neg">fallen</span>'}${p.vassalOf !== null ? ` · pays tribute to ${esc(g.nation(p.vassalOf).name)} until turn ${p.vassalUntil}` : ''}</div></div>
       <button id="btn-reflag" class="btn small" title="Draw a new flag design">↻ Flag</button></div>
     <div class="trait"><b>${T.name}</b> — ${T.desc}</div>
     <div class="trait"><b>${L.name} leader</b> — ${L.desc}</div>
     <div class="trait"><b>Edict</b> — ${p.edict ? `${EDICTS[p.edict].icon} ${EDICTS[p.edict].name}, ${Math.max(0, p.edictUntil - g.turn)} more turn${p.edictUntil - g.turn === 1 ? '' : 's'}: ${EDICTS[p.edict].desc}` : 'none in force. Play a Proclamation card to declare one.'}</div>
+    <div class="trait"><b>Wonders</b> — ${p.wonders.length ? p.wonders.map(w => `${WONDERS[w].icon} ${WONDERS[w].name}`).join(', ') : 'none'}${p.wonderId ? ` · building ${WONDERS[p.wonderId].icon} ${WONDERS[p.wonderId].name} (${p.wonderProgress}/${WONDER_STEPS})` : ''}</div>
+    <div class="trait"><b>Mastery</b> — ${mastered.length ? mastered.join(', ') : 'play a card 5 times to master it (★), 12 for ★★'}</div>
     <div class="stats" style="margin-top:10px">
-      <span>Growth</span><span>${Math.floor(p.growth)} / ${need} <span class="note">next citizen</span><div class="bar"><div style="width:${pct}%"></div></div></span>
+      <span>Growth</span><span>${Math.floor(p.growth)} / ${need} <span class="note">next citizen · ×${(0.6 + p.contentment / 125).toFixed(2)} from contentment</span><div class="bar"><div style="width:${pct}%"></div></div></span>
       <span>Territory</span><span>${p.owned.size} tiles · ${Math.round(g.claimedShare(p) * 100)}% of all claimed land</span>
       <span>Settlements</span><span>${p.settlements.length} of ${g.settlementCap(p)} allowed · ${g.workedTiles(p).size} worked tiles<br><span class="note">Towns raise the limit by 1, cities by 2.</span></span>
       <span>Castles</span><span>${p.castles.length} · attack ${g.attackStrength(p)}</span>
-      <span>Trade</span><span>${p.trades.size} route${p.trades.size === 1 ? '' : 's'}</span>
+      <span>Trade</span><span>${p.trades.size} route${p.trades.size === 1 ? '' : 's'} · ${g.allies(p).length} all${g.allies(p).length === 1 ? 'y' : 'ies'}</span>
       <span>Relics</span><span>${p.relics}</span>
     </div>`;
-  $('btn-reflag').onclick = () => { p.flagSeed = (p.flagSeed || 0) + 1; makeFlag(p); initLegend(); Sound.play('card'); refreshAll(); };
+  $('btn-reflag').onclick = () => { p.flagSeed = (p.flagSeed || 0) + 1; makeFlag(p); initLegend(); Sound.play('card'); refreshAll(); saveGame(); };
 }
 
 function renderDiploPanel() {
   const p = UI.player, g = UI.game;
-  const wars = g.enemies(p).length, offers = p.peaceOffers.size;
-  $('diplo-sum').textContent = wars ? `⚔️ at war with ${wars}${offers ? ` · ${offers} peace offer${offers === 1 ? '' : 's'}` : ''}` : `${p.trades.size} trade route${p.trades.size === 1 ? '' : 's'} · at peace`;
+  const wars = g.enemies(p).length, offers = p.peaceOffers.size + (p.allianceOffers ? p.allianceOffers.size : 0);
+  $('diplo-sum').textContent = wars ? `⚔️ at war with ${wars}${offers ? ` · ${offers} offer${offers === 1 ? '' : 's'}` : ''}` : `${p.trades.size} trade route${p.trades.size === 1 ? '' : 's'} · ${g.allies(p).length} all${g.allies(p).length === 1 ? 'y' : 'ies'}${offers ? ` · ${offers} offer${offers === 1 ? '' : 's'}` : ''}`;
   let html = '';
   for (const n of g.nations) {
     if (n === p) continue;
     const T = NATION_TRAITS[n.trait], L = LEADER_TRAITS[n.leader.trait];
     const rel = g.rel(p, n), relL = g.relLabel(rel);
     const trading = p.trades.has(n.id);
-    const war = g.atWar(p, n), truce = g.truceActive(p, n);
+    const war = g.atWar(p, n), truce = g.truceActive(p, n), ally = g.allied(p, n);
     const borders = n.alive && g.bordersNation(p, n);
-    let status = war ? '<span class="war-tag">⚔️ At war</span>' : truce ? `<span class="truce-tag">🕊️ Truce until turn ${g.truces[g.warKey(p, n)]}</span>` : '<span class="status">At peace</span>';
+    let status = war ? '<span class="war-tag">⚔️ At war</span>' : ally ? '<span class="status" style="color:var(--good)">🤲 Allied</span>' : truce ? `<span class="truce-tag">🕊️ Truce until turn ${g.truces[g.warKey(p, n)]}</span>` : '<span class="status">At peace</span>';
+    if (n.vassalOf === p.id && n.vassalUntil > g.turn) status += ' · pays you tribute';
+    if (p.vassalOf === n.id && p.vassalUntil > g.turn) status += ' · you pay them tribute';
     let btns = '';
     if (n.alive) {
-      if (p.peaceOffers.has(n.id)) btns += `<button class="small gold" data-accept="${n.id}">🕊️ Accept peace (free)</button>`;
+      if (p.peaceOffers.has(n.id)) btns += `<button class="small gold" data-accept="${n.id}">🕊️ ${p.tributeDemand === n.id ? 'Accept peace & pay tribute' : 'Accept peace (free)'}</button>`;
+      if (p.allianceOffers && p.allianceOffers.has(n.id)) btns += `<button class="small gold" data-pact="${n.id}">🤲 Accept pact (free)</button>`;
+      if (ally) btns += `<button class="small" data-break="${n.id}">Break pact</button>`;
       const hint = [];
       const cardBtn = (action, label, cls = '') => {
         const idx = g.handIndexFor(p, action);
-        if (idx < 0) { hint.push(label.replace(/^.*? /, '')); return; }
+        if (idx < 0) { hint.push(CARDS[CARD_FOR_ACTION[action]].name); return; }
         const chk = g.checkAction(p, action, null, n.id);
         btns += `<button class="small${cls}" data-card="${idx}" data-n="${n.id}" ${chk.ok && p.ap > 0 ? '' : 'disabled'} title="${esc(chk.why || 'Play ' + CARDS[p.hand[idx]].name)}">${label}</button>`;
       };
-      if (!trading && !war) cardBtn('trade', '🤝 Trade (Merchants)');
-      if (war) cardBtn('peace', '🕊️ Offer peace (Treaty)');
-      else cardBtn('declare_war', '⚔️ Declare war (Casus Belli)', ' danger');
+      if (!trading && !war) cardBtn('trade', '🤝 Trade');
+      if (war) cardBtn('peace', '🕊️ Offer peace');
+      else if (!ally) { cardBtn('alliance', '🤲 Propose pact'); cardBtn('declare_war', '⚔️ Declare war', ' danger'); }
       if (hint.length) btns += `<span class="note">Needs a card: ${hint.join(', ')}.</span>`;
     }
+    const allies = g.allies(n).filter(a => a !== p).map(a => a.colorName);
     html += `<div class="nation-row${n.alive ? '' : ' dead'}">
       <span class="swatch" style="background:${n.color}"></span>
       <div><div class="nm">${flagImg(n)} ${esc(n.name)} <span class="note">· ${n.colorName}</span></div>
-        <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}${n.edict ? ` · ${EDICTS[n.edict].icon} ${EDICTS[n.edict].name}` : ''}</div>
-        <div class="sub">${n.alive ? `${n.owned.size} tiles · ${n.settlements.length} settlements · attack ${g.attackStrength(n)} · score ${g.score(n)}` : 'This nation has fallen.'}</div>
+        <div class="sub">${esc(n.leader.name)} — ${T.name}, ${L.name}${n.edict ? ` · ${EDICTS[n.edict].icon} ${EDICTS[n.edict].name}` : ''}${n.wonders.length ? ' · ' + n.wonders.map(w => WONDERS[w].icon).join('') : ''}</div>
+        <div class="sub">${n.alive ? `${n.owned.size} tiles · ${n.settlements.length} settlements · attack ${g.attackStrength(n)} · score ${g.score(n)}${allies.length ? ' · allies: ' + allies.join(', ') : ''}` : 'This nation has fallen.'}</div>
         <div class="sub">${status} · <span class="rel-${relL}">${relL}</span> (${Math.round(rel)})${borders ? ' · shares your border' : ''}${trading ? ` · 🤝 trading, +${g.tradeIncome(p, n)} gold/turn` : ''}</div>
         <div class="sub">Last move: ${esc(n.lastAction)}</div>
         <div class="btns">${btns}</div>
@@ -689,10 +908,13 @@ function renderDiploPanel() {
   const panel = $('diplo-body');
   panel.innerHTML = html;
   for (const b of panel.querySelectorAll('button[data-accept]')) b.onclick = () => acceptPeace(parseInt(b.dataset.accept, 10));
+  for (const b of panel.querySelectorAll('button[data-pact]')) b.onclick = () => acceptPact(parseInt(b.dataset.pact, 10));
+  for (const b of panel.querySelectorAll('button[data-break]')) b.onclick = () => breakPact(parseInt(b.dataset.break, 10));
   for (const b of panel.querySelectorAll('button[data-card]')) b.onclick = () => {
     const idx = parseInt(b.dataset.card, 10), target = parseInt(b.dataset.n, 10);
     const c = CARDS[p.hand[idx]];
     if (c.action === 'declare_war' && !confirm(`Declare war on ${g.nation(target).name}? Trade with them ends and relations sour.`)) return;
+    if (c.action === 'peace') { openPicker(idx); return; } // choose plain peace or tribute
     playCardFlow(idx, null, target);
   };
 }
@@ -702,10 +924,12 @@ function renderLog() {
   const entries = g.log.slice(-80);
   $('log-sum').textContent = entries.length ? `turn ${entries[entries.length - 1].turn}` : '';
   $('log').innerHTML = entries.map(e => {
-    const war = /conquer|seizes|fallen|Famine|declares war/.test(e.msg);
+    const war = /conquer|seizes|fallen|Famine|declares war|siege|rises up/.test(e.msg);
     const event = /^Event:/.test(e.msg);
-    return `<div class="entry${e.nation === p.id ? ' mine' : ''}${war ? ' war' : ''}${event ? ' event' : ''}"><span class="t">T${e.turn}</span>${esc(e.msg)}</div>`;
+    const loc = locateMessage(e.msg);
+    return `<div class="entry${e.nation === p.id ? ' mine' : ''}${war ? ' war' : ''}${event ? ' event' : ''}${loc !== null ? ' link' : ''}" ${loc !== null ? `data-tile="${loc}" title="Click to show on the map"` : ''}><span class="t">T${e.turn}</span>${esc(e.msg)}</div>`;
   }).join('');
+  for (const el of $('log').querySelectorAll('.entry.link')) el.onclick = () => panTo(g.tiles[parseInt(el.dataset.tile, 10)]);
 }
 
 function showGameOver() {
@@ -713,9 +937,20 @@ function showGameOver() {
   $('go-title').textContent = g.winner === p ? '🏆 Victory' : `${g.winner.name} prevails`;
   $('go-reason').textContent = g.reason;
   Sound.play(g.winner === p ? 'win' : 'lose');
+  if (!UI.gameCounted) {
+    UI.gameCounted = true;
+    UI.profile.games++; if (g.winner === p) UI.profile.wins++;
+    store('profile', UI.profile);
+    unlock('colonists', true);
+    if (g.winner === p) unlock('marriage', true);
+    renderUnlocks();
+    try { localStorage.removeItem('nwm.save'); } catch (e) { /* ignore */ }
+  }
   const ranked = g.nations.slice().sort((a, b) => g.score(b) - g.score(a));
   $('go-table').innerHTML = '<tr><th>#</th><th>Nation</th><th>Leader</th><th>Tiles</th><th>Settlements</th><th>People</th><th>Score</th></tr>' +
     ranked.map((n, i) => `<tr class="${n === p ? 'me' : ''}"><td>${i + 1}</td><td>${flagImg(n)} ${esc(n.name)}${n.alive ? '' : ' (fallen)'}</td><td>${esc(n.leader.name)}</td><td>${n.owned.size}</td><td>${n.settlements.length}</td><td>${g.totalPop(n)}</td><td>${g.score(n)}</td></tr>`).join('');
+  const newly = Object.entries(UNLOCKS).filter(([k]) => UI.profile.unlocked.includes(k));
+  $('go-reason').textContent += newly.length ? `  Card collection: ${newly.map(([, u]) => CARDS[u.card].icon + ' ' + CARDS[u.card].name).join(', ')}.` : '';
   $('gameover').classList.remove('hidden');
 }
 
@@ -730,6 +965,7 @@ function initPanels() {
   const st = $('standings');
   st.open = load('standings', true);
   st.addEventListener('toggle', () => store('standings', st.open));
+  $('btn-market').onclick = openMarket;
   initSound();
 }
 

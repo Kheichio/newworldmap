@@ -558,7 +558,8 @@ class Renderer {
 
   drawSettlement(t, px, py, s) {
     const ctx = this.ctx;
-    const n = this.game.nations[t.owner];
+    const n = t.owner !== null ? this.game.nations[t.owner] : null;
+    const color = n ? n.color : '#8d8d99'; // independent settlements are grey
     const st = t.settlement;
     const frac = { village: 0.72, town: 0.9, city: 1.05 }[st.type];
     if (s >= 9) {
@@ -567,16 +568,31 @@ class Renderer {
         ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = Math.max(2, s * 0.16); ctx.stroke();
         ctx.strokeStyle = '#f1d77a'; ctx.lineWidth = Math.max(1, s * 0.09); ctx.stroke();
       }
-      this.sprite(st.type, n.color, px, py, s, frac);
+      this.sprite(st.type, color, px, py, s, frac);
     } else {
       const size = { village: 0.45, town: 0.6, city: 0.75 }[st.type] * s;
       ctx.fillStyle = '#1b1b1f'; ctx.fillRect(px + (s - size) / 2 - 1, py + (s - size) / 2 - 1, size + 2, size + 2);
-      ctx.fillStyle = n.color; ctx.fillRect(px + (s - size) / 2, py + (s - size) / 2, size, size);
+      ctx.fillStyle = color; ctx.fillRect(px + (s - size) / 2, py + (s - size) / 2, size, size);
       if (st.capital) { ctx.strokeStyle = '#f1d77a'; ctx.lineWidth = 1.5; ctx.strokeRect(px + (s - size) / 2 - 1, py + (s - size) / 2 - 1, size + 2, size + 2); }
     }
     if (t.harbor && s >= 12) {
       const d = s * 0.36;
       ctx.drawImage(this.sprites.get('harbor'), px + s - d - 1, py + s - d - 1, d, d);
+    }
+    if (t.wonder && s >= 12) {
+      ctx.font = this.emojiFont(s * 0.4); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(WONDERS[t.wonder].icon, px + s * 0.22, py + s * 0.22);
+    }
+    if (t.siege) {
+      // besieged: dashed red ring with the besieger's colour
+      const by = this.game.nations[t.siege.by];
+      ctx.save();
+      ctx.setLineDash([Math.max(2, s * 0.15), Math.max(2, s * 0.1)]);
+      ctx.beginPath(); ctx.arc(px + s / 2, py + s / 2, s * 0.62, 0, Math.PI * 2);
+      ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = Math.max(2.5, s * 0.18); ctx.stroke();
+      ctx.strokeStyle = by ? by.color : '#c0392b'; ctx.lineWidth = Math.max(1.5, s * 0.1); ctx.stroke();
+      ctx.restore();
+      if (s >= 12) { ctx.font = this.emojiFont(s * 0.45); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('⚔️', px + s * 0.8, py + s * 0.2); }
     }
   }
 }

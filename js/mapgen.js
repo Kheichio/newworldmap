@@ -162,5 +162,6 @@ function generateMap({ width: W, height: H, seed, type = 'continents' }) {
   // Cleanup temp fields
   for (const t of tiles) { delete t.lake; }
 
-  return { width: W, height: H, seed, type, tiles, landCount: tiles.filter(t => !t.water).length };
+  const ruins = new Set(tiles.filter(t => t.ruins).map(t => t.i));
+  return { width: W, height: H, seed, type, tiles, landCount: tiles.filter(t => !t.water).length, ruinsAt: i => ruins.has(i) };
 }

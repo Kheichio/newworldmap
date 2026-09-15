@@ -14,6 +14,8 @@ window.addEventListener('DOMContentLoaded', () => {
     $('app').classList.add('hidden');
     $('setup').classList.remove('hidden');
     $('in-seed').value = '';
+    $('btn-continue-save').classList.toggle('hidden', !hasSave());
+    renderUnlocks();
   };
   $('btn-new').onclick = newGame;
   $('btn-go-new').onclick = newGame;

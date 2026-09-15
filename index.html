@@ -78,7 +78,9 @@
           <div class="tray-head">
             <span class="tray-title">Your hand</span>
             <span id="tray-note" class="tray-note"></span>
+            <button id="btn-market" class="tool" title="Buy a card from the market (gold, no action)">🏪 Market</button>
           </div>
+          <div id="armed" class="armed hidden"></div>
           <div id="hand" class="hand"></div>
         </div>
 
@@ -154,7 +156,11 @@
         </div>
         <div id="trait-preview" class="inset"></div>
       </div>
-      <div class="row right"><button id="btn-start" class="btn gold big">Found your nation</button></div>
+      <div id="unlocks" class="unlocks"></div>
+      <div class="row right">
+        <button id="btn-continue-save" class="btn big hidden">Continue saved game</button>
+        <button id="btn-start" class="btn gold big">Found your nation</button>
+      </div>
     </div>
   </div>
 
@@ -173,7 +179,13 @@
         <li><b>Food</b> feeds your people; the surplus fills the growth bar and adds citizens. Villages become towns (4 people) and cities (9). Shortfalls cause famine. <b>Materials</b> build; <b>gold</b> pays for expansion, trade, war, edicts and upkeep.</li>
         <li><b>Resources</b> give a taste of their yield; the matching improvement unlocks it fully. <b>Ruins</b> reward whoever claims them.</li>
         <li><b>War must be declared</b> (Casus Belli) before anyone can March on enemy tiles. Conquered settlements are plundered. Offer peace with a Treaty; accepting an offer made to you is free. Castles defend everything within 2 tiles.</li>
-        <li><b>Edicts</b> (Proclamation) are 12-turn policies. <b>Events</b> strike every nation now and then.</li>
+        <li><b>Sieges:</b> a settlement usually needs two Marches — the first besieges it (halving its yields), the second within 4 turns takes it. Overwhelming force storms it outright.</li>
+        <li><b>Pacts</b> (Pact card) make allies who cannot attack each other and receive a free Casus Belli when the other is attacked. <b>Tribute:</b> when clearly winning a war, a Treaty can demand tribute — peace plus part of their income for 20 turns.</li>
+        <li><b>Reaction cards</b> (Militia, Sanctuary, Bribe, Ambush) are armed on your turn for free and trigger during the rivals' phase; unused ones return to your hand.</li>
+        <li><b>Market:</b> buy a random card from a category for gold (two per turn). <b>Mastery:</b> playing the same card often improves it (★ on the card).</li>
+        <li><b>Contentment</b> (😊) comes from worked luxury resources (gems, spices, pearls, wine…), trade partners' luxuries, the Great Temple and festivals; sprawl and war lower it. Content people grow faster; below 30, settlements may rise up and go independent — claim them back with Expansion.</li>
+        <li><b>Wonders</b> (Great Work card): five contributions at your capital complete one; each may exist only once in the world. <b>Colonists</b> and <b>Sea Raids</b> reach across the water from your harbours.</li>
+        <li><b>Edicts</b> (Proclamation) are 12-turn policies. <b>Events</b> strike every nation now and then. The game autosaves every turn; unlocked cards carry over between games.</li>
         <li><b>Win</b> by holding half of all claimed land, being the last nation standing, or having the highest score at the turn limit.</li>
         <li>Drag / <kbd>WASD</kbd> / arrows to pan · scroll to zoom · <kbd>C</kbd> capital · <kbd>L</kbd> legend · <kbd>G</kbd> grid · <kbd>M</kbd> mute · <kbd>Esc</kbd> cancel.</li>
       </ul>
